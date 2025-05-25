@@ -2,7 +2,36 @@ from openai import OpenAI
 import json
 import requests
 import time
-import base64
+# import re
+
+# def extract_first_json(text):
+#     """
+#     Extracts the first JSON object from the text.
+#     """
+#     match = re.search(r"\{[\s\S]*\}", text)
+#     if match:
+#         return match.group(0)
+#     return None
+
+def parse_text_recommendations(text_block):
+    """
+    Convert a plain text block from ChatGPT into structured JSON.
+    """
+    recommendations = []
+    blocks = text_block.strip().split('---')
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        rec = {}
+        for line in block.split('\n'):
+            if ':' in line:
+                key, value = line.split(':', 1)
+                rec[key.strip().lower().replace(' ', '_')] = value.strip()
+        recommendations.append(rec)
+
+    return recommendations
 
 
 # =============================================================================
@@ -84,7 +113,6 @@ def extract_lastfm_features(track_info, artist_info=None):
 
     # Popularity score (normalized)
     if features["playcount"] > 0:
-        # Normalize playcount to 0-1 scale (log scale for better distribution)
         import math
         features["popularity"] = min(math.log10(features["playcount"] + 1) / 8, 1.0)
     else:
@@ -102,105 +130,36 @@ def extract_lastfm_features(track_info, artist_info=None):
 
 
 # =============================================================================
-# CHATGPT AUDIO FEATURES ESTIMATION
+# COMBINED LASTFM + MILLION SONG DATASET INTEGRATION
 # =============================================================================
 
-def get_ai_estimated_audio_features(artist, track, lastfm_data, openai_client):
+# def get_msd_audio_features(artist, track):
+#     """
+#     Get audio features from the Million Song Dataset for a given track.
+#     Placeholder: Replace with real MSD data extraction logic!
+#     """
+#     # Here, simulate fetching MSD features. Replace with actual MSD data access logic.
+#     msd_features = {
+#         "tempo": 120,
+#         "loudness": -10,
+#         "key": 5,
+#         "mode": 1,
+#         "time_signature": 4,
+#         "danceability": 0.6,
+#         "energy": 0.7,
+#         "valence": 0.5,
+#         "acousticness": 0.2,
+#         "instrumentalness": 0.1,
+#         "speechiness": 0.05,
+#         "liveness": 0.1
+#     }
+#     msd_features["analysis_source"] = "million_song_dataset"
+#     return msd_features
+
+
+def get_enhanced_audio_features(artist, track, lastfm_api_key):
     """
-    Use ChatGPT to estimate Spotify-like audio features with Last.fm context
-    """
-
-    # Prepare context from Last.fm data
-    context = ""
-    if lastfm_data:
-        if lastfm_data.get("genres"):
-            context += f"Genres: {', '.join(lastfm_data['genres'])}. "
-        if lastfm_data.get("duration_ms", 0) > 0:
-            duration_sec = lastfm_data["duration_ms"] // 1000
-            context += f"Duration: {duration_sec // 60}:{duration_sec % 60:02d}. "
-        if lastfm_data.get("popularity", 0) > 0.5:
-            context += "This is a popular/well-known song. "
-
-    prompt = f"""
-You are a music analysis expert. Analyze the song "{track}" by {artist} and provide Spotify-style audio features.
-
-{context}
-
-Based on your knowledge of this song, provide these audio features (scale 0.0 to 1.0 unless specified):
-
-- danceability: How suitable for dancing (0.0 = not danceable, 1.0 = very danceable)
-- energy: Intensity and power (0.0 = calm/quiet, 1.0 = energetic/loud)
-- valence: Musical positivity (0.0 = sad/negative, 1.0 = happy/positive)
-- acousticness: Acoustic vs electronic (0.0 = electronic, 1.0 = acoustic)
-- instrumentalness: Amount of vocals (0.0 = very vocal, 1.0 = instrumental)
-- speechiness: Amount of spoken words (0.0 = singing, 1.0 = speech/rap)
-- liveness: Live performance feel (0.0 = studio, 1.0 = live recording)
-- loudness: Overall loudness in dB (typically -30 to 0, average around -10)
-- tempo: BPM (typically 50-200)
-- key: Musical key as integer (0=C, 1=C#, 2=D, 3=D#, 4=E, 5=F, 6=F#, 7=G, 8=G#, 9=A, 10=A#, 11=B)
-- mode: Major (1) or Minor (0)
-- time_signature: Beat count per measure (usually 3, 4, or 5)
-
-
-Be accurate based on the actual song. Respond ONLY with valid JSON. Round your numbers up:
-
-{{
-    "danceability": 0.0,
-    "energy": 0.0,
-    "valence": 0.0,
-    "acousticness": 0.0,
-    "instrumentalness": 0.0,
-    "speechiness": 0.0,
-    "liveness": 0.0,
-    "loudness": -10.0,
-    "tempo": 120,
-    "key": 0,
-    "mode": 1,
-    "time_signature": 4
-}}
-    """
-
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,  # Lower temperature for more consistent results
-            max_tokens=300
-        )
-
-        result = response.choices[0].message.content.strip()
-
-        # Clean up the JSON response
-        if result.startswith("```json"):
-            result = result[7:-3]
-        elif result.startswith("```"):
-            result = result[3:-3]
-
-        # Parse and validate JSON
-        features = json.loads(result)
-
-        # Add metadata
-        features["analysis_source"] = "chatgpt"
-        features["analysis_version"] = "1.0"
-
-        return features
-
-    except json.JSONDecodeError as e:
-        print(f"JSON parsing error for {track}: {e}")
-        print(f"Raw response: {result}")
-        return None
-    except Exception as e:
-        print(f"Error getting AI features for {track}: {e}")
-        return None
-
-
-# =============================================================================
-# COMBINED LASTFM + CHATGPT INTEGRATION
-# =============================================================================
-
-def get_enhanced_audio_features(artist, track, lastfm_api_key, openai_client):
-    """
-    Combine Last.fm real data with ChatGPT estimated audio features
+    Combine Last.fm real data with Million Song Dataset audio features
     """
     print(f"🎵 Analyzing: {track} by {artist}")
 
@@ -215,24 +174,18 @@ def get_enhanced_audio_features(artist, track, lastfm_api_key, openai_client):
     if lastfm_features.get("genres"):
         print(f"  🏷️  Genres: {', '.join(lastfm_features['genres'][:3])}")
 
-    # Step 2: Get AI-estimated audio features
-    print("  🤖 Getting AI audio features...")
-    ai_features = get_ai_estimated_audio_features(artist, track, lastfm_features, openai_client)
+    # Step 2: Get Million Song Dataset audio features
+    print("  📊 Getting audio features from the Million Song Dataset...")
+    #msd_features = get_msd_audio_features(artist, track)
 
     # Step 3: Combine both datasets
     combined_features = {
         "track_name": track,
         "artist_name": artist,
-        "audio_features": ai_features or {},
+        #"audio_features": msd_features,
         "metadata": lastfm_features,
-        "data_sources": []
+        "data_sources": ["lastfm", "million_song_dataset"]
     }
-
-    # Track which data sources we successfully used
-    if lastfm_features:
-        combined_features["data_sources"].append("lastfm")
-    if ai_features:
-        combined_features["data_sources"].append("chatgpt")
 
     print(f"  ✅ Analysis complete! Sources: {', '.join(combined_features['data_sources'])}")
 
@@ -242,15 +195,11 @@ def get_enhanced_audio_features(artist, track, lastfm_api_key, openai_client):
     return combined_features
 
 
-# =============================================================================
-# INTEGRATION WITH YOUR EXISTING CODE
-# =============================================================================
-
-def augment_recommendations_with_enhanced_features(recommendations, lastfm_api_key, openai_client):
+def augment_recommendations_with_enhanced_features(recommendations, lastfm_api_key):
     """
-    Drop-in replacement for your Spotify audio features function
+    Enhance recommendations with Last.fm + MSD data
     """
-    print(f"\n🚀 Enhancing {len(recommendations)} recommendations with Last.fm + ChatGPT...")
+    print(f"\n🚀 Enhancing {len(recommendations)} recommendations with Last.fm + MSD...")
     print("=" * 60)
 
     enhanced_recommendations = []
@@ -263,8 +212,7 @@ def augment_recommendations_with_enhanced_features(recommendations, lastfm_api_k
             enhanced_data = get_enhanced_audio_features(
                 rec["artist"],
                 rec["title"],
-                lastfm_api_key,
-                openai_client
+                lastfm_api_key
             )
 
             # Add enhanced data to recommendation
@@ -276,16 +224,79 @@ def augment_recommendations_with_enhanced_features(recommendations, lastfm_api_k
             enhanced_recommendations.append(rec_copy)
 
         except Exception as e:
-            print(f"  ❌ Error processing {rec['title']}: {e}")
-            # Keep original recommendation if enhancement fails
+            print(f" Error processing {rec['title']}: {e}")
             enhanced_recommendations.append(rec)
 
     print(f"\n✅ Enhancement complete! {len(enhanced_recommendations)} tracks processed.")
     return enhanced_recommendations
 
+# =============================================================================
+# IMPLIMWENT USER FEEDBACK TO LOGIC
+# =============================================================================
+
+user_story = []
+
+def GetUserResponseToSuggestion(curret_reccomended_song, user_story):
+    #print(user_story)
+
+    print(curret_reccomended_song["suggested_lyrics"])
+
+    while(1):
+        response = input("choose 1 - LIKE or 0 - DISLIKE")
+        if response.isdigit():
+            response=int(response)
+            if response == 0:
+                print("song discarded!")
+                return;
+            elif response == 1:
+                addLyricToUserStoryAfterLike(curret_reccomended_song,user_story)
+                return
+            else:
+                print("Invalid choice! Please enter 1 or 0.")
+        else:
+            print("Invalid choice! Please enter 1 or 0.")
+
+
+
+def addLyricToUserStoryAfterLike(curret_reccomended_song, user_profile):
+    user_profile["user_profile"]["liked_songs_details"].append(curret_reccomended_song)
+    user_profile["user_profile"]["user_story"].append(curret_reccomended_song["suggested_lyrics"])
+    return
+
+final_analysis_prompt = (
+    "You are a compassionate, insightful music assistant.\n"
+    "A user has just finished reviewing some song recommendations and has created this personal 'user story' of lyrics:\n\n"
+    "{user_story}\n\n"
+    "Based on these chosen lyrics, please write a short, friendly analysis of the user's character and emotional state.\n"
+    "Use a warm, encouraging tone. Make it 3-4 sentences, focusing on empathy and understanding."
+)
+
+def get_final_user_analysis(user_story, openai_client):
+    # Prepare the prompt, inserting the actual user story
+    prompt_text = final_analysis_prompt.format(user_story='\n'.join(user_story))
+
+    print("\n--- SENDING FINAL ANALYSIS PROMPT TO CHATGPT ---\n")
+    response = openai_client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a music assistant who writes warm, friendly character analyses based on song lyrics.\n"
+                    "Do not mention that you are an AI. Do not talk about your process. Simply respond to the user."
+                )
+            },
+            {"role": "user", "content": prompt_text}
+        ],
+        temperature=0.7
+    )
+
+    # Extract and return the final analysis
+    final_analysis = response.choices[0].message.content.strip()
+    return final_analysis
 
 # =============================================================================
-# MAIN INTEGRATION WITH YOUR EXISTING CODE
+# MAIN INTEGRATION
 # =============================================================================
 
 # Your existing user profile and system prompt (unchanged)
@@ -413,96 +424,121 @@ system_prompt = (
     "You are a music recommendation assistant that specializes in lyrics and emotional tone.\n"
     "A user has shared a list of songs they deeply resonate with. Each song includes a lyrics excerpt, core emotional themes, and sentiment.\n"
     "Your job is to recommend 5 new songs that are lyrically similar, emotionally aligned, or thematically relevant.\n"
-    "For each song, also provide:\n"
+    "For each song, provide:\n"
     "1. A 20-second lyrics snippet that best matches the user's taste\n"
     "2. An estimated time range for that snippet (e.g., \"00:42 - 01:02\")\n"
     "3. The suggested lyrics as a string\n"
     "4. The suggested snippet's start and end times as separate fields (HH:MM:SS)\n"
     "5. A short reason explaining why the song and that specific part would resonate with the user\n"
     "Do not include any of the songs already liked by the user. Focus on well-known songs with emotionally rich lyrics.\n"
-    "Respond in this exact JSON format:\n"
-    "{\n"
-    "  \"recommendations\": [\n"
-    "    {\n"
-    "      \"title\": \"\",\n"
-    "      \"artist\": \"\",\n"
-    "      \"snippet_lyrics\": \"\",\n"
-    "      \"snippet_timestamps\": \"\",\n"
-    "      \"suggested_lyrics\": \"\",\n"
-    "      \"suggested_lyrics_start_time\": \"HH:MM:SS\",\n"
-    "      \"suggested_lyrics_end_time\": \"HH:MM:SS\",\n"
-    "      \"reason\": \"\"\n"
-    "    }\n"
-    "  ]\n"
-    "}"
+    "\n"
+    "Instead of JSON, return your 5 recommendations in this simple text format:\n\n"
+    "Title: <title>\n"
+    "Artist: <artist>\n"
+    "Snippet Lyrics: <snippet_lyrics>\n"
+    "Snippet Timestamps: <snippet_timestamps>\n"
+    "Suggested Lyrics: <suggested_lyrics>\n"
+    "Suggested Lyrics Start Time: <suggested_lyrics_start_time>\n"
+    "Suggested Lyrics End Time: <suggested_lyrics_end_time>\n"
+    "Reason: <reason>\n\n"
+    "Separate each recommendation with a line containing '---'.\n"
+    "Do not add extra commentary or markdown, just this plain text."
 )
+
+#An empty list of user liked lyrics.
 
 
 def main():
-    """
-    Main function - your complete music recommendation system
-    """
-    print("🎵 ENHANCED MUSIC RECOMMENDATION SYSTEM")
-    print("🔄 Using Last.fm + ChatGPT for audio features")
+    print("ENHANCED MUSIC RECOMMENDATION SYSTEM")
     print("=" * 60)
 
-    # API Configuration ## api keys!
-    OPENAI_API_KEY = "open-api-key"  # Replace with your key
-    LASTFM_API_KEY = "lastFM"  # Get from: https://www.last.fm/api/account/create
+    # API Configuration
+    OPENAI_API_KEY = "openapikey"  # Replace with your key
+    LASTFM_API_KEY = "lastfmapikey"
 
-    # Initialize clients
+    # Initialize ChatGPT client
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
+    # Add empty user_story and liked_songs_details to user_profile
+    user_profile["user_profile"]["user_story"] = []
+    user_profile["user_profile"]["liked_songs_details"] = []
+
     try:
-        # Step 1: Get recommendations from ChatGPT
-        print("📝 Getting music recommendations from ChatGPT...")
-        response = openai_client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(user_profile)}
-            ],
-            temperature=0.8
-        )
+        for round_num in range(2):  # Two sets of recommendations
+            print(f"\n=== ROUND {round_num + 1} ===\n")
+            print("Getting music recommendations from ChatGPT...")
 
-        chat_output = response.choices[0].message.content
+            response = openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(user_profile)}
+                ],
+                temperature=0.8
+            )
 
-        # Clean up the response
-        if chat_output.startswith("```json"):
-            chat_output = chat_output[7:]
-        elif chat_output.startswith("```"):
-            chat_output = chat_output[3:]
 
-        chat_output = chat_output.strip().rstrip("```")
-        recommendations = json.loads(chat_output)["recommendations"]
+            chat_output = response.choices[0].message.content.strip()
 
-        print(f"✅ Got {len(recommendations)} recommendations from ChatGPT")
+            parsed_recommendations = parse_text_recommendations(chat_output)
 
-        # Step 2: Enhance with Last.fm + ChatGPT audio features
-        enhanced_recommendations = augment_recommendations_with_enhanced_features(
-            recommendations,
-            LASTFM_API_KEY,
+            print(json.dumps({"recommendations": parsed_recommendations}, indent=2))
+
+
+            # Use regex to extract the first JSON block
+            #json_text = extract_first_json(chat_output)
+
+            # if json_text:
+            #     recommendations = json.loads(json_text)["recommendations"]
+            #     print("Parsed recommendations:", recommendations)
+            # else:
+            #     print("No valid JSON found!")
+
+            # if chat_output.startswith("```json"):
+            #     chat_output = chat_output[7:]
+            # elif chat_output.startswith("```"):
+            #     chat_output = chat_output[3:]
+            # chat_output = chat_output.strip().rstrip("```")
+
+            #recommendations = json.loads(chat_output)["recommendations"]
+            print(f"Got {len(parsed_recommendations)} recommendations from ChatGPT.")
+
+            # Enhance recommendations
+            enhanced_recommendations = augment_recommendations_with_enhanced_features(
+                parsed_recommendations,
+                LASTFM_API_KEY
+            )
+
+            # Get user input for first two recommendations
+            for rec in enhanced_recommendations:
+                #print(f"\n--- Recommendation #{i+1} of ROUND {round_num+1} ---")
+                GetUserResponseToSuggestion(rec, user_profile)
+
+        # Final output
+        print("\n" + "=" * 60)
+        print("FINAL USER PROFILE:")
+        print(json.dumps(user_profile, indent=2))
+
+        # After rounds are complete, get final user analysis
+        final_analysis = get_final_user_analysis(
+            user_profile["user_profile"]["user_story"],
             openai_client
         )
 
-        # Step 3: Display final results
-        print("\n" + "=" * 60)
-        print("🎯 FINAL ENHANCED RECOMMENDATIONS")
-        print("=" * 60)
+        print("\n--- FINAL USER CHARACTER & EMOTIONAL ANALYSIS ---")
+        print(final_analysis)
 
-        final_output = {"recommendations": enhanced_recommendations}
-        print(json.dumps(final_output, indent=2))
+        # Optionally save to a file
+        with open("user_character_analysis.txt", "w") as f:
+            f.write(final_analysis)
 
-        # Optional: Save to file
-        with open("enhanced_recommendations.json", "w") as f:
-            json.dump(final_output, f, indent=2)
-        print("\n💾 Results saved to 'enhanced_recommendations.json'")
+        print("\nAnalysis saved to 'user_character_analysis.txt'")
+        print("\nProgram completed. Goodbye!")
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
-
 
 if __name__ == "__main__":
     main()
