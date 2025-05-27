@@ -2,16 +2,7 @@ from openai import OpenAI
 import json
 import requests
 import time
-# import re
-
-# def extract_first_json(text):
-#     """
-#     Extracts the first JSON object from the text.
-#     """
-#     match = re.search(r"\{[\s\S]*\}", text)
-#     if match:
-#         return match.group(0)
-#     return None
+import base64
 
 def parse_text_recommendations(text_block):
     """
@@ -127,6 +118,115 @@ def extract_lastfm_features(track_info, artist_info=None):
         features["artist_genres"] = artist_genres[:5]
 
     return features
+
+
+# ========================================
+# SPOTIFY API FUNCTIONS
+# ========================================
+def get_spotify_profile(access_token):
+    url = "https://api.spotify.com/v1/me"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = requests.get(url, headers=headers)
+    return response.json() if response.status_code == 200 else None
+
+def get_spotify_top_tracks(access_token, limit=10):
+    url = f"https://api.spotify.com/v1/me/top/tracks?limit={limit}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = requests.get(url, headers=headers)
+    return response.json()["items"] if response.status_code == 200 else []
+
+def get_spotify_recently_played(access_token, limit=10):
+    url = f"https://api.spotify.com/v1/me/player/recently-played?limit={limit}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = requests.get(url, headers=headers)
+    return response.json()["items"] if response.status_code == 200 else []
+
+def get_access_token(client_id, client_secret):
+    auth_str = f"{client_id}:{client_secret}"
+    b64_auth = base64.b64encode(auth_str.encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {b64_auth}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    data = {
+        "grant_type": "client_credentials"
+    }
+
+    response = requests.post("https://accounts.spotify.com/api/token", headers=headers, data=data)
+
+    if response.status_code == 200:
+        token_info = response.json()
+        return token_info["access_token"]
+    else:
+        print("Error:", response.status_code, response.text)
+        return None
+
+
+# ========================================
+# WEATHER API FUNCTION
+# ========================================
+def get_weather_data(api_key, city="Tel Aviv"):
+    url = "http://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "q": city,
+        "appid": api_key,
+        "units": "metric"
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        weather_desc = data["weather"][0]["description"]
+        temp = data["main"]["temp"]
+        return {"weather": weather_desc, "temperature_celsius": temp}
+    else:
+        print("Weather API Error:", response.status_code, response.text)
+        return {}
+
+
+def build_user_profile(spotify_token, weather_api_key):
+    profile = get_spotify_profile(spotify_token)
+    top_tracks = get_spotify_top_tracks(spotify_token, limit=5)
+    recent_tracks = get_spotify_recently_played(spotify_token, limit=5)
+    weather = get_weather_data(weather_api_key)
+
+    # Build listening history
+    listening_history = []
+    for item in recent_tracks:
+        track = item["track"]
+        listening_history.append({
+            "title": track["name"],
+            "artist": track["artists"][0]["name"],
+            "album": track["album"]["name"]
+        })
+
+    # Build liked songs with audio features
+    liked_songs = []
+    for track in top_tracks:
+        #audio_features = get_audio_features(track["id"], spotify_token)
+        liked_songs.append({
+            "title": track["name"],
+            "artist": track["artists"][0]["name"],
+            #"audio_features": audio_features
+        })
+
+    user_profile = {
+        "user_profile": {
+            "user_id": profile["id"],
+            "display_name": profile.get("display_name"),
+            "email": profile.get("email"),
+            "country": profile.get("country"),
+            "product": profile.get("product"),
+            "listening_behavior": {
+                "listening_history": listening_history,
+                "liked_songs": liked_songs
+            },
+            "environmental_context": weather
+        }
+    }
+
+    return user_profile
 
 
 # =============================================================================
@@ -300,125 +400,125 @@ def get_final_user_analysis(user_story, openai_client):
 # =============================================================================
 
 # Your existing user profile and system prompt (unchanged)
-user_profile = {
-    "user_profile": {
-        "user_id": "your_unique_user_id",
-        "demographics": {
-            "age": 23,
-            "gender": "male",
-            "location": "Tel Aviv, Israel"
-        },
-        "mood_or_activity": "melancholic evening",
-        "listening_behavior": {
-            "listening_history": [
-                {
-                    "title": "Hurt",
-                    "artist": "Johnny Cash",
-                    "play_count": 42,
-                    "skip_count": 0,
-                    "replay_count": 15
-                },
-                {
-                    "title": "Creep",
-                    "artist": "Radiohead",
-                    "play_count": 30,
-                    "skip_count": 1,
-                    "replay_count": 8
-                }
-            ],
-            "likes": ["Hurt", "Creep", "The Night We Met"],
-            "dislikes": ["Happy", "Shake It Off"],
-            "search_history": [
-                "sad acoustic songs",
-                "songs about regret",
-                "radiohead discography"
-            ],
-            "playlist_activity": {
-                "added": ["Breathe Me", "The Blower's Daughter"],
-                "removed": ["Can't Stop the Feeling"]
-            },
-            "session_patterns": {
-                "frequency_per_week": 6,
-                "average_session_duration_minutes": 45,
-                "active_hours": ["22:00", "01:00"]
-            },
-            "listening_context": "night-time reflection"
-        },
-        "liked_songs": [
-            {
-                "title": "Hurt",
-                "artist": "Johnny Cash",
-                "lyrics_excerpt": "I hurt myself today to see if I still feel...",
-                "topics": ["pain", "regret", "existentialism"],
-                "sentiment": "melancholic",
-                "audio_features": {
-                    "genre": "country",
-                    "tempo_bpm": 90,
-                    "key": "A minor",
-                    "energy": 0.2,
-                    "valence": 0.1,
-                    "danceability": 0.3,
-                    "loudness": -12.5,
-                    "instrumentalness": 0.0,
-                    "speechiness": 0.05,
-                    "acousticness": 0.9
-                }
-            },
-            {
-                "title": "The Night We Met",
-                "artist": "Lord Huron",
-                "lyrics_excerpt": "I had all and then most of you, some and now none of you...",
-                "topics": ["loss", "nostalgia", "love"],
-                "sentiment": "wistful",
-                "audio_features": {
-                    "genre": "indie folk",
-                    "tempo_bpm": 110,
-                    "key": "D major",
-                    "energy": 0.4,
-                    "valence": 0.3,
-                    "danceability": 0.5,
-                    "loudness": -10.2,
-                    "instrumentalness": 0.1,
-                    "speechiness": 0.03,
-                    "acousticness": 0.85
-                }
-            },
-            {
-                "title": "Creep",
-                "artist": "Radiohead",
-                "lyrics_excerpt": "I'm a creep, I'm a weirdo...",
-                "topics": ["alienation", "identity", "self-doubt"],
-                "sentiment": "dark",
-                "audio_features": {
-                    "genre": "alternative rock",
-                    "tempo_bpm": 92,
-                    "key": "G major",
-                    "energy": 0.6,
-                    "valence": 0.2,
-                    "danceability": 0.4,
-                    "loudness": -8.7,
-                    "instrumentalness": 0.0,
-                    "speechiness": 0.04,
-                    "acousticness": 0.5
-                }
-            }
-        ],
-        "device_info": {
-            "device_type": "mobile",
-            "os": "iOS",
-            "app_used": "Spotify"
-        },
-        "social_signals": {
-            "friends_listening_to": ["Phoebe Bridgers", "Bon Iver", "Ben Howard"],
-            "shared_playlists": ["Late Night Sad Vibes", "Deep Thoughts"],
-            "regional_trends": ["Indie acoustic", "Alt-folk"]
-        },
-        "environmental_context": {
-            "weather": "clear night",
-            "temperature_celsius": 21
-        }
-    }
-}
+# user_profile = {
+#     "user_profile": {
+#         "user_id": "your_unique_user_id",
+#         "demographics": {
+#             "age": 23,
+#             "gender": "male",
+#             "location": "Tel Aviv, Israel"
+#         },
+#         "mood_or_activity": "melancholic evening",
+#         "listening_behavior": {
+#             "listening_history": [
+#                 {
+#                     "title": "Hurt",
+#                     "artist": "Johnny Cash",
+#                     "play_count": 42,
+#                     "skip_count": 0,
+#                     "replay_count": 15
+#                 },
+#                 {
+#                     "title": "Creep",
+#                     "artist": "Radiohead",
+#                     "play_count": 30,
+#                     "skip_count": 1,
+#                     "replay_count": 8
+#                 }
+#             ],
+#             "likes": ["Hurt", "Creep", "The Night We Met"],
+#             "dislikes": ["Happy", "Shake It Off"],
+#             "search_history": [
+#                 "sad acoustic songs",
+#                 "songs about regret",
+#                 "radiohead discography"
+#             ],
+#             "playlist_activity": {
+#                 "added": ["Breathe Me", "The Blower's Daughter"],
+#                 "removed": ["Can't Stop the Feeling"]
+#             },
+#             "session_patterns": {
+#                 "frequency_per_week": 6,
+#                 "average_session_duration_minutes": 45,
+#                 "active_hours": ["22:00", "01:00"]
+#             },
+#             "listening_context": "night-time reflection"
+#         },
+#         "liked_songs": [
+#             {
+#                 "title": "Hurt",
+#                 "artist": "Johnny Cash",
+#                 "lyrics_excerpt": "I hurt myself today to see if I still feel...",
+#                 "topics": ["pain", "regret", "existentialism"],
+#                 "sentiment": "melancholic",
+#                 "audio_features": {
+#                     "genre": "country",
+#                     "tempo_bpm": 90,
+#                     "key": "A minor",
+#                     "energy": 0.2,
+#                     "valence": 0.1,
+#                     "danceability": 0.3,
+#                     "loudness": -12.5,
+#                     "instrumentalness": 0.0,
+#                     "speechiness": 0.05,
+#                     "acousticness": 0.9
+#                 }
+#             },
+#             {
+#                 "title": "The Night We Met",
+#                 "artist": "Lord Huron",
+#                 "lyrics_excerpt": "I had all and then most of you, some and now none of you...",
+#                 "topics": ["loss", "nostalgia", "love"],
+#                 "sentiment": "wistful",
+#                 "audio_features": {
+#                     "genre": "indie folk",
+#                     "tempo_bpm": 110,
+#                     "key": "D major",
+#                     "energy": 0.4,
+#                     "valence": 0.3,
+#                     "danceability": 0.5,
+#                     "loudness": -10.2,
+#                     "instrumentalness": 0.1,
+#                     "speechiness": 0.03,
+#                     "acousticness": 0.85
+#                 }
+#             },
+#             {
+#                 "title": "Creep",
+#                 "artist": "Radiohead",
+#                 "lyrics_excerpt": "I'm a creep, I'm a weirdo...",
+#                 "topics": ["alienation", "identity", "self-doubt"],
+#                 "sentiment": "dark",
+#                 "audio_features": {
+#                     "genre": "alternative rock",
+#                     "tempo_bpm": 92,
+#                     "key": "G major",
+#                     "energy": 0.6,
+#                     "valence": 0.2,
+#                     "danceability": 0.4,
+#                     "loudness": -8.7,
+#                     "instrumentalness": 0.0,
+#                     "speechiness": 0.04,
+#                     "acousticness": 0.5
+#                 }
+#             }
+#         ],
+#         "device_info": {
+#             "device_type": "mobile",
+#             "os": "iOS",
+#             "app_used": "Spotify"
+#         },
+#         "social_signals": {
+#             "friends_listening_to": ["Phoebe Bridgers", "Bon Iver", "Ben Howard"],
+#             "shared_playlists": ["Late Night Sad Vibes", "Deep Thoughts"],
+#             "regional_trends": ["Indie acoustic", "Alt-folk"]
+#         },
+#         "environmental_context": {
+#             "weather": "clear night",
+#             "temperature_celsius": 21
+#         }
+#     }
+# }
 
 system_prompt = (
     "You are a music recommendation assistant that specializes in lyrics and emotional tone.\n"
@@ -452,14 +552,24 @@ def main():
     print("ENHANCED MUSIC RECOMMENDATION SYSTEM")
     print("=" * 60)
 
+    spotify_client_id=""
+    spotify_client_secret=""
+
     # API Configuration
-    OPENAI_API_KEY = "openapikey"  # Replace with your key
-    LASTFM_API_KEY = "lastfmapikey"
+    OPENAI_API_KEY = "openapikey"  # Replace with your key #paid
+    LASTFM_API_KEY = "lastfmapikey" #free
+    SPOTIFY_ACCESS_TOKEN = get_access_token(spotify_client_id, spotify_client_secret) #free
+    WEATHER_API_KEY = "YOUR_OPENWEATHERMAP_API_KEY" #free
 
     # Initialize ChatGPT client
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
+    user_profile = build_user_profile(SPOTIFY_ACCESS_TOKEN, WEATHER_API_KEY)
+
     # Add empty user_story and liked_songs_details to user_profile
+    #user_profile["user_profile"]["user_story"] = []
+    #user_profile["user_profile"]["liked_songs_details"] = []
+
     user_profile["user_profile"]["user_story"] = []
     user_profile["user_profile"]["liked_songs_details"] = []
 
@@ -485,22 +595,6 @@ def main():
             print(json.dumps({"recommendations": parsed_recommendations}, indent=2))
 
 
-            # Use regex to extract the first JSON block
-            #json_text = extract_first_json(chat_output)
-
-            # if json_text:
-            #     recommendations = json.loads(json_text)["recommendations"]
-            #     print("Parsed recommendations:", recommendations)
-            # else:
-            #     print("No valid JSON found!")
-
-            # if chat_output.startswith("```json"):
-            #     chat_output = chat_output[7:]
-            # elif chat_output.startswith("```"):
-            #     chat_output = chat_output[3:]
-            # chat_output = chat_output.strip().rstrip("```")
-
-            #recommendations = json.loads(chat_output)["recommendations"]
             print(f"Got {len(parsed_recommendations)} recommendations from ChatGPT.")
 
             # Enhance recommendations
@@ -511,7 +605,6 @@ def main():
 
             # Get user input for first two recommendations
             for rec in enhanced_recommendations:
-                #print(f"\n--- Recommendation #{i+1} of ROUND {round_num+1} ---")
                 GetUserResponseToSuggestion(rec, user_profile)
 
         # Final output
