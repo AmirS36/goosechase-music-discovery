@@ -141,28 +141,44 @@ def get_spotify_recently_played(access_token, limit=10):
     response = requests.get(url, headers=headers)
     return response.json()["items"] if response.status_code == 200 else []
 
-def get_access_token(client_id, client_secret):
-    auth_str = f"{client_id}:{client_secret}"
-    b64_auth = base64.b64encode(auth_str.encode()).decode()
+# def get_access_token(client_id, client_secret):
+#     auth_str = f"{client_id}:{client_secret}"
+#     b64_auth = base64.b64encode(auth_str.encode()).decode()
+#
+#     headers = {
+#         "Authorization": f"Basic {b64_auth}",
+#         "Content-Type": "application/x-www-form-urlencoded"
+#     }
+#
+#     data = {
+#         "grant_type": "client_credentials"
+#     }
+#
+#     response = requests.post("https://accounts.spotify.com/api/token", headers=headers, data=data)
+#
+#     if response.status_code == 200:
+#         token_info = response.json()
+#         return token_info["access_token"]
+#     else:
+#         print("Error:", response.status_code, response.text)
+#         return None
 
-    headers = {
-        "Authorization": f"Basic {b64_auth}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-
+def get_user_access_token(client_id, client_secret, redirect_uri, code):
+    url = "https://accounts.spotify.com/api/token"
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {
-        "grant_type": "client_credentials"
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "client_id": client_id,
+        "client_secret": client_secret
     }
-
-    response = requests.post("https://accounts.spotify.com/api/token", headers=headers, data=data)
-
+    response = requests.post(url, headers=headers, data=data)
     if response.status_code == 200:
-        token_info = response.json()
-        return token_info["access_token"]
+        return response.json()
     else:
         print("Error:", response.status_code, response.text)
         return None
-
 
 # ========================================
 # WEATHER API FUNCTION
@@ -225,6 +241,8 @@ def build_user_profile(spotify_token, weather_api_key):
             "environmental_context": weather
         }
     }
+        #POSSIBLE FEATURE - take the top tracks add more information about each one using chatGPT
+    #Take the eviromental_context and pass it to chatGPT to turn these numbers into text better fit as a prompt
 
     return user_profile
 
@@ -552,14 +570,17 @@ def main():
     print("ENHANCED MUSIC RECOMMENDATION SYSTEM")
     print("=" * 60)
 
-    spotify_client_id=""
-    spotify_client_secret=""
+    spotify_client_id="spotify_client_id"
+    spotify_client_secret="client_secret"
+    redirect_uri = "https://192.168.7.33:8080/callback"
+    code = ""
 
-    # API Configuration
     OPENAI_API_KEY = "openapikey"  # Replace with your key #paid
-    LASTFM_API_KEY = "lastfmapikey" #free
-    SPOTIFY_ACCESS_TOKEN = get_access_token(spotify_client_id, spotify_client_secret) #free
-    WEATHER_API_KEY = "YOUR_OPENWEATHERMAP_API_KEY" #free
+    LASTFM_API_KEY = "lastfmkey" #free
+    SPOTIFY_REQUEST_TOKEN_RESPONSE = get_user_access_token(spotify_client_id, spotify_client_secret, redirect_uri, code)
+    WEATHER_API_KEY = "weatherapikey" #free
+
+    SPOTIFY_ACCESS_TOKEN=SPOTIFY_REQUEST_TOKEN_RESPONSE["access_token"]
 
     # Initialize ChatGPT client
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
