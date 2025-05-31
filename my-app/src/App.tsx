@@ -5,6 +5,8 @@ import RegisterForm from './pages/RegisterForm';
 import Home from './pages/Home';
 import Discover from './pages/Discover';
 import Liked from './pages/Liked';
+import Settings from './pages/Settings';
+
 
 const App = () => {
   return (
@@ -14,6 +16,7 @@ const App = () => {
       <Route path="/home" element={<Home />} />
       <Route path="/discover" element={<Discover />} />
       <Route path="/liked" element={<Liked />} />
+      <Route path="/settings" element={<Settings />} />
       {/* Add more routes as needed */}
     </Routes>
   );

@@ -1,0 +1,36 @@
+Manual for GooseChase
+Below there are different commands and notes worth remembring 
+
+=========================================================
+Commands to run different servers
+
+--Analysis: Python FastAPI Server
+First change directory to 'analysis' (cd analysis)
+
+**Run the FastAPI server**
+uvicorn main:app --reload --port 8000
+--reload = auto-reloads the server on code changes
+--port 8000 = you’ll access it at http://localhost:8000
+
+**Open the Swagger UI**
+This is the auto-generated API UI where you can test your endpoints without writing any code.
+Go to:
+🌐 http://localhost:8000/docs
+
+
+==============================
+--Backend: TypeScript backend 
+First change directory to 'backend' (cd backend)
+
+
+==============================
+--Backend: Prisma Database
+First change directory to 'backend' (cd backend)
+
+**To open the database**
+Opens the database with a GUI
+
+npx prisma studio
+
+
+
