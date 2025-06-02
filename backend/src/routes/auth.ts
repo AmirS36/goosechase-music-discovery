@@ -17,7 +17,11 @@ router.post("/login", async (req: Request, res: Response) => {
 
   const token = generateToken({ userId: user.id, username: user.username });
 
-  res.json({ token });
+  res.json({ 
+    message: "Login successful",
+    token,
+    username: user.username
+   });
 });
 
 export default router;
