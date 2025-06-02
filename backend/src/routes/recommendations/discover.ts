@@ -1,46 +1,56 @@
-// This code defines an Express route that interacts with a Python API to fetch song recommendations.
-
-import express from 'express';
+// src/routes/discover.ts
+import express from "express";
+import prisma from "../../lib/prisma"; // adjust path if needed
 
 const router = express.Router();
 
-router.post('/', async (req, res) => {
-  try {
-    const pythonApiUrl = 'http://localhost:8000/recommend';
+router.get("/", async (req, res) => {
+  const username = req.query.username as string;
 
-    const pythonResponse = await fetch(pythonApiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        spotify_token: 'dummy',
-        weather_api_key: 'dummy',
-        lastfm_api_key: 'dummy',
-        openai_api_key: 'dummy'
-      }),
+  if (!username) {
+    res.status(400).json({ error: "Missing username" });
+    return
+  }
+
+  try {
+    // 1. Get user from DB
+    const user = await prisma.user.findUnique({
+      where: { username: username },
     });
 
-    if (!pythonResponse.ok) {
-      throw new Error(`Python API error: ${pythonResponse.status}`);
+    if (!user || !user.spotifyAccessToken) {
+      res.status(404).json({ error: "User not found or missing token" });
+      return
     }
 
-    const data = await pythonResponse.json();
+    const accessToken = user.spotifyAccessToken;
 
-    const cleaned = data.recommendations.map((rec: any) => ({
-      title: rec.title,
-      artist: rec.artist,
-      lyrics: rec.suggested_lyrics,
-      start: rec.suggested_lyrics_start_time,
-      end: rec.suggested_lyrics_end_time,
-      reason: rec.reason
-    }));
+    // 2. Call Omri's API using fetch instead of axios
+    const omriRes = await fetch("http://localhost:8000/get-starting-songs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ accessToken }),
+    });
 
-    res.json({ songs: cleaned });
+    if (!omriRes.ok) {
+      throw new Error(`Omri's API error: ${omriRes.status}`);
+    }
 
-  } catch (err) {
-    console.error('Error fetching from Python module:', err);
-    res.status(500).json({ error: 'Could not fetch recommendations' });
+    const tracks = await omriRes.json();
+
+    console.log("songs fetched from Omri's API:", tracks);
+
+
+    // 4. Return the songs to the frontend
+    res.json({ songs: tracks });
+    return;
+
+  } catch (error) {
+    console.error("Error in /discover:", error);
+    res.status(500).json({ error: "Internal server error" });
+    return;
   }
 });
 

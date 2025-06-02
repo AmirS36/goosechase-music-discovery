@@ -3,6 +3,7 @@ import json
 import requests
 import time
 import base64
+import random
 
 def parse_text_recommendations(text_block):
     """
@@ -140,6 +141,48 @@ def get_spotify_recently_played(access_token, limit=10):
     headers = {"Authorization": f"Bearer {access_token}"}
     response = requests.get(url, headers=headers)
     return response.json()["items"] if response.status_code == 200 else []
+
+
+# Fetches up to 50 saved tracks from the user's Spotify library
+# and returns 'limit' number of randomly selected track objects.
+# Each track object includes name, artists, preview_url, album art, and Spotify link.
+def get_spotify_starting_songs(access_token, limit=5):
+
+    url = "https://api.spotify.com/v1/me/tracks?limit=50"
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code != 200:
+        print(f"Spotify API error: {response.status_code} - {response.text}")
+        return []
+
+    items = response.json().get("items", [])
+    if not items:
+        return []
+
+    # Extract and simplify fields for frontend
+    simplified = []
+    for item in items:
+        track = item["track"]
+        # preview_url = track.get("preview_url")
+
+        # if not preview_url:
+        #     continue  # Skip songs with no preview
+
+        simplified.append({
+            "title": track.get("name"),
+            "artist": track.get("artists", [{}])[0].get("name"),
+            # "preview_url": preview_url,
+            "preview_url": track.get("preview_url"),
+            "image_url": track.get("album", {}).get("images", [{}])[0].get("url"),
+            "spotify_url": track.get("external_urls", {}).get("spotify"),
+        })
+
+    # Pick a random subset from those with previews
+    return random.sample(simplified, min(limit, len(simplified)))
 
 # def get_access_token(client_id, client_secret):
 #     auth_str = f"{client_id}:{client_secret}"

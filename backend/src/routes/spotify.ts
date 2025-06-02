@@ -18,7 +18,8 @@ router.get('/spotify', (req, res) => {
     "user-read-email",
     "user-read-private",
     "user-top-read",
-    "user-read-recently-played"
+    "user-read-recently-played",
+    "user-library-read"
   ].join(' ');
 
   const username = req.query.username as string;

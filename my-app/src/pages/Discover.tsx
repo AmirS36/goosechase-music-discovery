@@ -2,49 +2,54 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSwipeable } from "react-swipeable";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, LogOut, Home as HomeIcon, Search, Heart, Settings } from "lucide-react";
+import { User, LogOut, Home as HomeIcon, Search, Heart, Settings, ExternalLink } from "lucide-react";
 
-interface Card {
+interface SongCard {
   title: string;
   artist: string;
-  lyrics: string;
-  start: string;
-  end: string;
-  reason: string;
-  imageUrl?: string; // optional, will fallback if missing
+  preview_url?: string;
+  image_url?: string;
+  spotify_url?: string;
 }
+
+const fallbackImage =
+  "https://cdn.dribbble.com/userupload/29179303/file/original-2536efd374c53c282a258d4080eb7717.jpg";
 
 const Discover = () => {
   const navigate = useNavigate();
-  const [cards, setCards] = useState<Card[]>([]);
+  const [cards, setCards] = useState<SongCard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipeDirection, setSwipeDirection] = useState<"left" | "right" | null>(null);
   const [lastDirection, setLastDirection] = useState<"left" | "right" | null>(null);
 
-useEffect(() => {
-  const fetchRecommendations = async () => {
-    try {
-      const response = await fetch("http://localhost:5000/api/discover", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await response.json();
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      try {
+        const response = await fetch("http://localhost:5000/api/discover?username=" + localStorage.getItem("username"), {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        const data = await response.json();
+        // Expecting data.songs as described
+        const cardsWithImages: SongCard[] = data.songs.map((song: any) => ({
+          title: song.title,
+          artist: song.artist,
+          preview_url: song.preview_url,
+          image_url: song.image_url || fallbackImage,
+          spotify_url: song.spotify_url,
+        }));
+        setCards(cardsWithImages);
+        setCurrentIndex(0);
+      } catch (error) {
+        console.error("Failed to fetch recommendations:", error);
+      }
+    };
 
-      const cardsWithImages = data.songs.map((song: any) => ({
-        ...song,
-        imageUrl: song.imageUrl || "https://cdn.dribbble.com/userupload/29179303/file/original-2536efd374c53c282a258d4080eb7717.jpg"
-      }));
-
-      setCards(cardsWithImages);
-    } catch (error) {
-      console.error("Failed to fetch recommendations:", error);
-    }
-  };
-
-  fetchRecommendations();
-}, []);
+    fetchRecommendations();
+    // Optionally, add a dependency if you want to refetch on navigation
+  }, []);
 
   const handleSwipe = (direction: "left" | "right") => {
     if (currentIndex >= cards.length) return;
@@ -103,10 +108,10 @@ useEffect(() => {
           <AnimatePresence>
             {cards.length > 0 && currentIndex < cards.length && (
               <motion.div
-                key={cards[currentIndex].id}
+                key={cards[currentIndex].spotify_url || cards[currentIndex].title}
                 className="absolute w-full h-full bg-white/10 rounded-lg flex flex-col items-center justify-end p-4 shadow-lg"
                 style={{
-                  backgroundImage: `url(${cards[currentIndex].imageUrl})`,
+                  backgroundImage: `url(${cards[currentIndex].image_url})`,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}
@@ -115,12 +120,30 @@ useEffect(() => {
                 exit={{ x: lastDirection === "right" ? 300 : -300, opacity: 0 }}
                 transition={{ duration: 0.4 }}
               >
-                <h2 className="text-xl font-bold text-white">
-                  {cards[currentIndex].title}
-                </h2>
-                <p className="text-sm text-gray-300">
-                  {cards[currentIndex].reason}
-                </p>
+                <div className="w-full bg-black/60 rounded-lg p-4 mb-2 flex flex-col items-center">
+                  <h2 className="text-xl font-bold text-white mb-1">{cards[currentIndex].title}</h2>
+                  <p className="text-md text-purple-200 mb-2">{cards[currentIndex].artist}</p>
+                  {cards[currentIndex].preview_url && (
+                    <audio
+                      controls
+                      src={cards[currentIndex].preview_url}
+                      className="mb-2 w-full"
+                    >
+                      Your browser does not support the audio element.
+                    </audio>
+                  )}
+                  <div className="flex items-center gap-2 mt-2">
+                    <a
+                      href={cards[currentIndex].spotify_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-green-400 hover:underline"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Listen on Spotify
+                    </a>
+                  </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

@@ -1,51 +1,32 @@
-# FastAPI app
+# main.py
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List
-from ChatxLastFMreccomends import build_user_profile, parse_text_recommendations, system_prompt  # refactor these in logic.py
+from fastapi.responses import JSONResponse
+from ChatxLastFMreccomends import get_spotify_starting_songs
 from openai import OpenAI
 
 app = FastAPI()
 
+# -----------------------------
+# Request Models
+# -----------------------------
 class RecommendRequest(BaseModel):
     spotify_token: str
     weather_api_key: str
     lastfm_api_key: str
     openai_api_key: str
 
-# @app.post("/recommend")
-# def recommend_songs(req: RecommendRequest):
-#     try:
-#         # Build user profile
-#         user_profile = build_user_profile(req.spotify_token, req.weather_api_key)
-#         user_profile["user_profile"]["user_story"] = []
-#         user_profile["user_profile"]["liked_songs_details"] = []
+class DiscoverRequest(BaseModel):
+    accessToken: str
 
-#         # Init OpenAI client
-#         openai_client = OpenAI(api_key=req.openai_api_key)
-
-#         # Generate recommendations
-#         # move it to logic.py
-#         response = openai_client.chat.completions.create(
-#             model="gpt-4",
-#             messages=[
-#                 {"role": "system", "content": system_prompt},
-#                 {"role": "user", "content": str(user_profile)}
-#             ],
-#             temperature=0.8
-#         )
-
-#         chat_output = response.choices[0].message.content.strip()
-#         recommendations = parse_text_recommendations(chat_output)
-
-#         return {"recommendations": recommendations}
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
+# -----------------------------
+# Endpoints
+# -----------------------------
 @app.post("/recommend")
 def recommend_songs(req: RecommendRequest):
+    # TODO: Replace dummy with real logic when ready
     dummy_recommendations = [
         {
             "title": "Fake Song One",
@@ -67,3 +48,13 @@ def recommend_songs(req: RecommendRequest):
         }
     ]
     return {"recommendations": dummy_recommendations}
+
+
+@app.post("/get-starting-songs")
+def get_starting_songs(req: DiscoverRequest):
+    try:
+        songs = get_spotify_starting_songs(req.accessToken)
+        print("Starting songs:", songs)
+        return JSONResponse(content=songs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
