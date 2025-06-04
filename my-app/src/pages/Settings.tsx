@@ -5,6 +5,7 @@ import {
   LogOut,
   Home as HomeIcon,
   Heart,
+  Search,
   Settings as SettingsIcon,
   Music,
   ShieldCheck,
@@ -177,7 +178,7 @@ const Settings = () => {
           onClick={() => navigate("/discover")}
           className="flex flex-col items-center text-white"
         >
-          <Heart className="w-6 h-6" />
+          <Search className="w-6 h-6" />
           <span className="text-xs mt-1">Discover</span>
         </button>
         <button
@@ -185,7 +186,7 @@ const Settings = () => {
           className="flex flex-col items-center text-white"
         >
           <Heart className="w-6 h-6" />
-          <span className="text-xs mt-1">Liked Songs</span>
+          <span className="text-xs mt-1">Liked</span>
         </button>
         <button
           onClick={() => navigate("/settings")}
