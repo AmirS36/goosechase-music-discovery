@@ -66,7 +66,6 @@ router.get("/", async (req, res) => {
 
     console.log("songs fetched from Omri's API (with preview URL's):", enrichedTracks);
 
-
     // 4. Return the songs to the frontend
     res.json({ songs: enrichedTracks });
     return;

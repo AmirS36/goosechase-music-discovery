@@ -50,43 +50,51 @@ const RegisterForm = () => {
   };
 
   return (
-    <Container>
-      <FormContainer>
-        <Title>Register</Title>
-        <Form onSubmit={handleSubmit}>
-          <FormGroup>
-            <Label htmlFor="username">Username</Label>
-            <Input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setUsername(e.target.value)
-              }
-              placeholder="Enter your username"
-            />
-          </FormGroup>
-          <FormGroup>
-            <Label htmlFor="password">Password</Label>
-            <Input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setPassword(e.target.value)
-              }
-              placeholder="Enter your password"
-            />
-          </FormGroup>
-          {message && <Message isError={isError}>{message}</Message>}
-          <Button type="submit">Register</Button>
-        </Form>
-        <Text>
-          Already have an account?{" "}
-          <LinkButton onClick={() => navigate("/")}>Login here</LinkButton>
-        </Text>
-      </FormContainer>
-    </Container>
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-purple-900 text-white flex flex-col">
+      <header className="flex justify-between items-center p-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xl font-bold">GooseChase</span>
+        </div>
+      </header>
+
+      <Container>
+        <FormContainer>
+          <Title>Register</Title>
+          <Form onSubmit={handleSubmit}>
+            <FormGroup>
+              <Label htmlFor="username">Username</Label>
+              <Input
+                type="text"
+                id="username"
+                value={username}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setUsername(e.target.value)
+                }
+                placeholder="Enter your username"
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="password">Password</Label>
+              <Input
+                type="password"
+                id="password"
+                value={password}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPassword(e.target.value)
+                }
+                placeholder="Enter your password"
+              />
+            </FormGroup>
+            {message && <Message isError={isError}>{message}</Message>}
+            <Button type="submit">Register</Button>
+          </Form>
+          <Text>
+            Already have an account?{" "}
+            <LinkButton onClick={() => navigate("/")}>Login here</LinkButton>
+          </Text>
+        </FormContainer>
+      </Container>
+    </div>
   );
 };
 

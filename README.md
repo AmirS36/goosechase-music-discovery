@@ -13,7 +13,7 @@ GooseChase is a music discovery app that learns your taste by showing you short 
 ## 🚀 Current Features
 
 - 🎵 Fetch 20-second Spotify previews
-- 💬 Swipe in six directions to express preferences
+- 💬 Swipe left or right to express preferences
 - 🤖 Backend generates music recommendations based on your vibe
 - 🧠 Builds a unique user profile using genres, tempo, mood, and lyrics
 

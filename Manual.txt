@@ -34,3 +34,7 @@ npx prisma studio
 
 
 
+
+====================================
+Spotify preview finder package reference 
+https://www.npmjs.com/package/spotify-preview-finder?activeTab=readme
