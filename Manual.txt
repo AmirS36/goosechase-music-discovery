@@ -26,7 +26,10 @@ General Server Commands (make sure you followed setup instructions beforhand)
 1. Navigate to the backend folder:
    > cd backend
 
-2. (Add your backend run/start commands here if needed)
+3. Start the development server:
+   > npm start
+   or
+   > npm run dev   (depending on your package.json scripts)
 
 
 [Prisma Database (inside backend)]
@@ -60,11 +63,6 @@ Node.js Project Setup Instructions (Backend / Frontend)
 
 2. Install all Node.js dependencies:
    > npm install
-
-3. Start the development server:
-   > npm start
-   or
-   > npm run dev   (depending on your package.json scripts)
 
 ---------------------------------------------------------
 Spotify Preview Finder (Node.js helper)
