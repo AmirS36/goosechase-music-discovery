@@ -7,12 +7,12 @@ GooseChase is a music discovery app that learns your taste by showing you short 
 ## 🖼️ Preview
 
 ### 🔍 Discover Page
-<img src="assets/discover.gif" alt="Discover page demo" width="600"/>
+<img src="assets/discover.gif" alt="Discover page demo" width="250" height="445"/>
 
 ### ⚙️ Settings Screens
 <p float="left">
-  <img src="assets/settings.jpg" alt="Settings screen" width="300"/>
-  <img src="assets/settings-spotifylogin.jpg" alt="Spotify login screen" width="300"/>
+  <img src="assets/settings.jpg" alt="Settings screen" width="180" height="320"/>
+  <img src="assets/settings-spotifylogin.jpg" alt="Spotify login screen" width="180" height="320"/>
 </p>
 
 ---
