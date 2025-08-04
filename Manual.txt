@@ -1,36 +1,73 @@
-Manual for GooseChase
-Below there are different commands and notes worth remembring 
+GooseChase Project Manual
+=========================
 
-=========================================================
-Commands to run different servers
+This manual contains commonly used commands, setup instructions, and helpful references for working on the GooseChase project.
 
---Analysis: Python FastAPI Server
-First change directory to 'analysis' (cd analysis)
+---------------------------------------------------------
+General Server Commands (make sure you followed setup instructions beforhand)
+---------------------------------------------------------
 
-**Run the FastAPI server**
-uvicorn main:app --reload --port 8000
---reload = auto-reloads the server on code changes
---port 8000 = you’ll access it at http://localhost:8000
+[Analysis: Python FastAPI Server]
 
-**Open the Swagger UI**
-This is the auto-generated API UI where you can test your endpoints without writing any code.
-Go to:
-🌐 http://localhost:8000/docs
+1. Navigate to the Python backend folder:
+   > cd analysis
 
+2. Run the FastAPI server:
+   > uvicorn main:app --reload --port 8000
+   - --reload : auto-restarts the server on code changes
+   - --port 8000 : server will be at http://localhost:8000
 
-==============================
---Backend: TypeScript backend 
-First change directory to 'backend' (cd backend)
+3. Open the Swagger UI:
+   > Open in browser: http://localhost:8000/docs
 
 
-==============================
---Backend: Prisma Database
-First change directory to 'backend' (cd backend)
+[Backend: TypeScript Server]
 
-**To open the database**
-Opens the database with a GUI
+1. Navigate to the backend folder:
+   > cd backend
 
-npx prisma studio
+3. Start the development server:
+   > npm start
+   or
+   > npm run dev   (depending on your package.json scripts)
 
 
+[Prisma Database (inside backend)]
 
+1. Navigate to the backend folder:
+   > cd backend
+
+2. Open Prisma Studio (GUI for DB):
+   > npx prisma studio
+
+
+---------------------------------------------------------
+Python Setup Instructions (analysis folder)
+---------------------------------------------------------
+
+1. Navigate to the Python backend folder:
+   > cd analysis
+
+2. Install required Python packages:
+   > pip install -r requirements.txt
+
+
+---------------------------------------------------------
+Node.js Project Setup Instructions (Backend / Frontend)
+---------------------------------------------------------
+
+1. Navigate to the project folder (e.g. backend or frontend):
+   > cd backend
+   or
+   > cd frontend
+
+2. Install all Node.js dependencies:
+   > npm install
+
+---------------------------------------------------------
+Spotify Preview Finder (Node.js helper)
+---------------------------------------------------------
+
+This package helps fetch working 30s preview URLs when Spotify doesn’t provide them.
+
+NPM: https://www.npmjs.com/package/spotify-preview-finder?activeTab=readme

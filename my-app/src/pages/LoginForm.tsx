@@ -42,7 +42,6 @@ const LoginForm = () => {
         setMessage("Login successful! Redirecting...");
         setIsError(false);
         setTimeout(() => navigate("/home"), 2000); // Redirect to home after 2 seconds
-
       } else {
         setMessage("Invalid credentials");
         setIsError(true);
@@ -54,45 +53,53 @@ const LoginForm = () => {
   };
 
   return (
-    <Container>
-      <FormContainer>
-        <Title>Login</Title>
-        <Form onSubmit={handleSubmit}>
-          <FormGroup>
-            <Label htmlFor="username">Username</Label>
-            <Input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setUsername(e.target.value)
-              }
-              placeholder="Enter your username"
-            />
-          </FormGroup>
-          <FormGroup>
-            <Label htmlFor="password">Password</Label>
-            <Input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setPassword(e.target.value)
-              }
-              placeholder="Enter your password"
-            />
-          </FormGroup>
-          {message && <Message isError={isError}>{message}</Message>}
-          <Button type="submit">Login</Button>
-        </Form>
-        <Text>
-          Don't have an account?{" "}
-          <LinkButton onClick={() => navigate("/register")}>
-            Register here
-          </LinkButton>
-        </Text>
-      </FormContainer>
-    </Container>
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-purple-900 text-white flex flex-col">
+      <header className="flex justify-between items-center p-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xl font-bold">GooseChase</span>
+        </div>
+      </header>
+
+      <Container>
+        <FormContainer>
+          <Title>Login</Title>
+          <Form onSubmit={handleSubmit}>
+            <FormGroup>
+              <Label htmlFor="username">Username</Label>
+              <Input
+                type="text"
+                id="username"
+                value={username}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setUsername(e.target.value)
+                }
+                placeholder="Enter your username"
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="password">Password</Label>
+              <Input
+                type="password"
+                id="password"
+                value={password}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPassword(e.target.value)
+                }
+                placeholder="Enter your password"
+              />
+            </FormGroup>
+            {message && <Message isError={isError}>{message}</Message>}
+            <Button type="submit">Login</Button>
+          </Form>
+          <Text>
+            Don't have an account?{" "}
+            <LinkButton onClick={() => navigate("/register")}>
+              Register here
+            </LinkButton>
+          </Text>
+        </FormContainer>
+      </Container>
+    </div>
   );
 };
 

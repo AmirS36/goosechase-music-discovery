@@ -8,6 +8,7 @@ import discoverRoute from './routes/recommendations/discover';
 import spotifyRoutes from './routes/spotify';
 import spotifyProfileRoute from './routes/spotify/spotifyProfile';
 
+require('dotenv').config(); // Ensure dotenv is loaded before importing routes
 
 dotenv.config();
 const app = express();

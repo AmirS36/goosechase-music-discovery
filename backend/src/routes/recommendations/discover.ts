@@ -2,6 +2,7 @@
 import express from "express";
 import prisma from "../../lib/prisma"; // adjust path if needed
 
+const spotifyPreviewFinder = require('spotify-preview-finder');
 const router = express.Router();
 
 router.get("/", async (req, res) => {
@@ -40,11 +41,33 @@ router.get("/", async (req, res) => {
 
     const tracks = await omriRes.json();
 
-    console.log("songs fetched from Omri's API:", tracks);
+  
+    // Step 3: Enrich each track with a preview URL using spotifyPreviewFinder
+    const enrichedTracks = await Promise.all(
+      tracks.map(async (track: any) => {
+        const query = `${track.title} - ${track.artist}`;
+        try {
+          const result = await spotifyPreviewFinder(query, 1);
+          const previewUrl = result.success && result.results[0]?.previewUrls?.[0] || null;
 
+          return {
+            ...track,
+            preview_url: previewUrl,
+          };
+        } catch (e) {
+          console.warn(`Preview finder failed for "${query}":`, e);
+          return {
+            ...track,
+            preview_url: null,
+          };
+        }
+      })
+    );
+
+    console.log("songs fetched from Omri's API (with preview URL's):", enrichedTracks);
 
     // 4. Return the songs to the frontend
-    res.json({ songs: tracks });
+    res.json({ songs: enrichedTracks });
     return;
 
   } catch (error) {
