@@ -608,6 +608,97 @@ system_prompt = (
 
 #An empty list of user liked lyrics.
 
+# --- NEW HELPERS (put near your Spotify helpers) ---
+import requests
+
+def _simplify_spotify_track(t):
+    return {
+        "title": t.get("name"),
+        "artist": (t.get("artists") or [{}])[0].get("name"),
+        "preview_url": t.get("preview_url"),
+        "image_url": (t.get("album") or {}).get("images", [{}])[0].get("url"),
+        "spotify_url": (t.get("external_urls") or {}).get("spotify"),
+        "id": t.get("id"),
+    }
+
+def fetch_user_swipes(username, base_url="http://localhost:5000", direction=None, limit=500):
+    params = {"username": username, "limit": limit}
+    if direction:
+        params["direction"] = direction  # "RIGHT" or "LEFT"
+    r = requests.get(f"{base_url}/api/swipes", params=params, timeout=10)
+    r.raise_for_status()
+    data = r.json()
+    items = data.get("swipes") or data.get("liked") or []
+    # Normalize
+    out = []
+    for s in items:
+        track = s.get("track") or {}
+        out.append({
+            "trackId": s.get("trackId") or track.get("id"),
+            "direction": s.get("direction"),
+            "track": track
+        })
+    return out
+
+def get_spotify_recommendations_from_swipes(access_token, seed_track_ids, limit=20):
+    if not seed_track_ids:
+        return []
+    # Spotify allows up to 5 seed tracks
+    seeds = ",".join(list(dict.fromkeys(seed_track_ids))[:5])
+    url = "https://api.spotify.com/v1/recommendations"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {"limit": limit, "seed_tracks": seeds}
+    resp = requests.get(url, headers=headers, params=params, timeout=10)
+    if resp.status_code != 200:
+        print("Spotify recs error:", resp.status_code, resp.text)
+        return []
+    tracks = resp.json().get("tracks", [])
+    return [_simplify_spotify_track(t) for t in tracks]
+
+def get_recommendations_from_swipes(spotify_token, username, node_base_url="http://localhost:5000", limit=5):
+    # 1) Pull history
+    all_swipes = fetch_user_swipes(username, node_base_url, direction=None, limit=1000)
+    liked = [s for s in all_swipes if str(s.get("direction")).upper() == "RIGHT"]
+    already_ids = {s.get("trackId") for s in all_swipes if s.get("trackId")}
+
+    # 2) If no likes yet → fallback to your existing starter
+    if not liked:
+        #from ChatxLastFMreccomends import get_spotify_starting_songs
+        return get_spotify_starting_songs(spotify_token, limit)  # existing util
+
+    # 3) Seed Spotify recs with RIGHT swipes
+    seed_ids = [s["trackId"] for s in liked if s.get("trackId")]
+    candidates = get_spotify_recommendations_from_swipes(spotify_token, seed_ids, limit=50)
+
+    # 4) Filter out anything already swiped
+    def _id_from_url(spotify_url):
+        # Best-effort: extract ID from URL if needed
+        import re
+        if not spotify_url: return ""
+        m = re.search(r"/track/([A-Za-z0-9]{22})", spotify_url)
+        return m.group(1) if m else ""
+
+    filtered = []
+    for c in candidates:
+        tid = c.get("id") or _id_from_url(c.get("spotify_url"))
+        if tid and tid not in already_ids:
+            filtered.append(c)
+
+    # 5) Ensure exactly 5, top up from starting songs if needed
+    out = filtered[:limit]
+    if len(out) < limit:
+        fallback = get_spotify_starting_songs(spotify_token, limit=limit)  # existing util
+        seen = {(x.get("id") or _id_from_url(x.get("spotify_url"))) for x in out}
+        for f in fallback:
+            fid = _id_from_url(f.get("spotify_url"))
+            if fid and fid not in already_ids and fid not in seen:
+                out.append(f)
+                seen.add(fid)
+            if len(out) >= limit:
+                break
+    return out
+
+
 
 def main():
     print("ENHANCED MUSIC RECOMMENDATION SYSTEM")
@@ -618,10 +709,10 @@ def main():
     redirect_uri = "https://192.168.7.33:8080/callback"
     code = ""
 
-    OPENAI_API_KEY = "openapikey"  # Replace with your key #paid
-    LASTFM_API_KEY = "lastfmkey" #free
+    OPENAI_API_KEY = ""
+    LASTFM_API_KEY = "" #free
     SPOTIFY_REQUEST_TOKEN_RESPONSE = get_user_access_token(spotify_client_id, spotify_client_secret, redirect_uri, code)
-    WEATHER_API_KEY = "weatherapikey" #free
+    WEATHER_API_KEY = "" #free
 
     SPOTIFY_ACCESS_TOKEN=SPOTIFY_REQUEST_TOKEN_RESPONSE["access_token"]
 

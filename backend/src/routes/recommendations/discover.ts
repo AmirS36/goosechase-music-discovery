@@ -1,11 +1,13 @@
 // src/routes/discover.ts
 import express from "express";
 import prisma from "../../lib/prisma"; // adjust path if needed
+import { ensureFreshSpotifyToken } from "../spotify"; // path to your helper
 
 const spotifyPreviewFinder = require('spotify-preview-finder');
 const router = express.Router();
 
 router.get("/", async (req, res) => {
+  console.log("[/api/discover GET] query:", req.query);
   const username = req.query.username as string;
 
   if (!username) {
@@ -24,22 +26,26 @@ router.get("/", async (req, res) => {
       return
     }
 
-    const accessToken = user.spotifyAccessToken;
+    //const accessToken = user.spotifyAccessToken;
+    // 🔑 make sure token is fresh
+    const accessToken = await ensureFreshSpotifyToken(user);
 
     // 2. Call Omri's API using fetch instead of axios
-    const omriRes = await fetch("http://localhost:8000/get-starting-songs", {
+    const omriRes = await fetch("http://localhost:8000/recommend", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ accessToken }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        spotify_token: accessToken,
+        username, // <- use the req.query.username already validated above
+      }),
     });
 
     if (!omriRes.ok) {
       throw new Error(`Omri's API error: ${omriRes.status}`);
     }
 
-    const tracks = await omriRes.json();
+    const { recommendations } = await omriRes.json();
+    const tracks = recommendations; // same simplified shape used later
 
   
     // Step 3: Enrich each track with a preview URL using spotifyPreviewFinder

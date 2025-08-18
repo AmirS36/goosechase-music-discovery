@@ -92,4 +92,82 @@ router.get('/spotify/callback', async (req, res) => {
   res.redirect(`http://localhost:5173/settings?auth=success&user=${displayName}`);
 });
 
+
+const TOKEN_URL = "https://accounts.spotify.com/api/token";
+
+function basicAuth() {
+  const id = process.env.SPOTIFY_CLIENT_ID!;
+  const secret = process.env.SPOTIFY_CLIENT_SECRET!;
+  return "Basic " + Buffer.from(`${id}:${secret}`).toString("base64");
+}
+
+export async function refreshAccessToken(refreshToken: string) {
+  const resp = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: {
+      Authorization: basicAuth(),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Spotify refresh failed: ${resp.status} ${text}`);
+  }
+
+  const data = await resp.json() as {
+    access_token: string;
+    expires_in: number;          // ~3600
+    refresh_token?: string;      // may be returned or not
+    scope?: string;
+    token_type: string;
+  };
+
+  return {
+    accessToken: data.access_token,
+    expiresIn: data.expires_in ?? 3600,
+    refreshToken: data.refresh_token, // undefined if Spotify didn’t rotate it
+  };
+}
+
+// Call this before ANY Spotify call:
+export async function ensureFreshSpotifyToken(user: {
+  id: number;
+  spotifyAccessToken: string | null;
+  spotifyRefreshToken: string | null;
+  spotifyTokenExpiresAt: number | null; // seconds since epoch
+}): Promise<string> {
+  if (!user.spotifyRefreshToken) {
+    throw new Error("No refresh token; user must re-connect Spotify.");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const stillValid =
+    user.spotifyAccessToken &&
+    user.spotifyTokenExpiresAt &&
+    user.spotifyTokenExpiresAt > now + 60; // 60s grace
+
+  if (stillValid) return user.spotifyAccessToken as string;
+
+  const result = await refreshAccessToken(user.spotifyRefreshToken);
+  const newAccess = result.accessToken;
+  const newRefresh = result.refreshToken ?? user.spotifyRefreshToken;
+  const newExpiry = now + (result.expiresIn || 3600);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      spotifyAccessToken: newAccess,
+      spotifyRefreshToken: newRefresh,
+      spotifyTokenExpiresAt: newExpiry,
+    },
+  });
+
+  return newAccess;
+}
+
 export default router;
