@@ -14,32 +14,68 @@ datasource db {
 }
 
 model User {
-  id          Int         @id @default(autoincrement())
-  username    String      @unique
-  password    String
+  id       Int    @id @default(autoincrement())
+  username String @unique
+  password String
 
-  preference  Preference? @relation(fields: [preferenceId], references: [id])
-  preferenceId Int?       @unique
+  preference   Preference? @relation(fields: [preferenceId], references: [id])
+  preferenceId Int?        @unique
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
 
   // Spotify Fields
-  spotifyId              String?   @unique
-  spotifyDisplayName     String?
-  spotifyImageUrl String?
-  spotifyAccessToken     String?
-  spotifyRefreshToken    String?
-  spotifyTokenExpiresAt  Int? 
+  spotifyId             String? @unique
+  spotifyDisplayName    String?
+  spotifyImageUrl       String?
+  spotifyAccessToken    String?
+  spotifyRefreshToken   String?
+  spotifyTokenExpiresAt Int?
+
+  swipes Swipe[]
 }
 
 model Preference {
-  id            Int      @id @default(autoincrement())
-  likesHipHop   Float    @default(0)
-  likesPop      Float    @default(0)
-  prefersHappy  Float    @default(0)
-  avgBPM        Float    @default(0)
-  allowExplicit Boolean  @default(false)
+  id            Int     @id @default(autoincrement())
+  likesHipHop   Float   @default(0)
+  likesPop      Float   @default(0)
+  prefersHappy  Float   @default(0)
+  avgBPM        Float   @default(0)
+  allowExplicit Boolean @default(false)
 
-  user          User?    @relation
+  user User? @relation
+}
+
+enum SwipeDirection {
+  LEFT
+  RIGHT
+}
+
+model Track {
+  /// Spotify track ID (22 chars). Using String keeps it DB-agnostic.
+  id         String  @id
+  title      String
+  artist     String
+  imageUrl   String?
+  previewUrl String?
+  spotifyUrl String  @unique
+  swipes     Swipe[]
+}
+
+model Swipe {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  trackId   String
+  direction SwipeDirection
+  createdAt DateTime       @default(now())
+  sessionId String? // optional: to group your 5-card batches
+  rank      Int? // optional: index of the card in the batch
+
+  user  User  @relation(fields: [userId], references: [id])
+  track Track @relation(fields: [trackId], references: [id])
+  // If you want 1 row per (user,track) instead of a history, uncomment:
+  // @@unique([userId, trackId])
+
+  @@index([userId, createdAt])
+  @@index([trackId, createdAt])
 }

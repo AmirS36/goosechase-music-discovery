@@ -77,6 +77,33 @@ const CustomAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
   );
 };
 
+async function saveSwipe(card: SongCard, direction: "left" | "right", rank?: number) {
+  try {
+    const username = localStorage.getItem("username");
+    if (!username) return;
+
+    await fetch("http://localhost:5000/api/swipes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username,
+        direction, // "left" | "right" is fine; server normalizes
+        rank,
+        metadata: {
+          title: card.title,
+          artist: card.artist,
+          image_url: card.image_url,
+          preview_url: card.preview_url,
+          spotify_url: card.spotify_url, // server extracts the 22-char id
+        },
+      }),
+    });
+  } catch (e) {
+    console.error("Failed to save swipe:", e);
+  }
+}
+
+
 const Discover = () => {
   const navigate = useNavigate();
   const [cards, setCards] = useState<SongCard[]>([]);
@@ -84,73 +111,48 @@ const Discover = () => {
   const [swipeDirection, setSwipeDirection] = useState<"left" | "right" | null>(null);
   const [lastDirection, setLastDirection] = useState<"left" | "right" | null>(null);
 
-  const fetchMoreSongs = async () => {
-    try {
-      const response = await fetch(
-        "http://localhost:5000/api/discover?username=" + localStorage.getItem("username"),
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      const data = await response.json();
-      const newCards: SongCard[] = data.songs.map((song: any) => ({
-        title: song.title,
-        artist: song.artist,
-        preview_url: song.preview_url,
-        image_url: song.image_url || fallbackImage,
-        spotify_url: song.spotify_url,
-      }));
-      
-      setCards(prevCards => [...prevCards, ...newCards]);
-    } catch (error) {
-      console.error("Failed to fetch more songs:", error);
-    }
-  };
+  const fetchRecommendations = async () => {
+   try {
+     const response = await fetch(
+       "http://localhost:5000/api/discover?username=" + localStorage.getItem("username"),
+       {
+         method: "GET",
+         headers: {
+           "Content-Type": "application/json",
+         },
+       }
+     );
+     
+     const data = await response.json();
+     const cardsWithImages: SongCard[] = data.songs.map((song: any) => ({
+       title: song.title,
+       artist: song.artist,
+       preview_url: song.preview_url,
+       image_url: song.image_url || fallbackImage,
+       spotify_url: song.spotify_url,
+     }));
+     setCards(cardsWithImages);
+     setCurrentIndex(0);
+   } catch (error) {
+     console.error("Failed to fetch recommendations:", error);
+   }
+ };
 
   // Check if we need more songs when currentIndex changes
   useEffect(() => {
     // If we have 1 card left, fetch more
-    if (cards.length - currentIndex === 1) {
-      fetchMoreSongs();
+    console.log("cards length=",cards.length);
+    console.log("currentIndex=", currentIndex);
+    if (cards.length==0 || cards.length - currentIndex === 1) {
+      fetchRecommendations();
     }
   }, [currentIndex]);
 
-  // Update the initial fetch to only get 5 songs
-  useEffect(() => {
-    const fetchRecommendations = async () => {
-      try {
-        const response = await fetch(
-          "http://localhost:5000/api/discover?username=" + localStorage.getItem("username"),
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        const data = await response.json();
-        const cardsWithImages: SongCard[] = data.songs.map((song: any) => ({
-          title: song.title,
-          artist: song.artist,
-          preview_url: song.preview_url,
-          image_url: song.image_url || fallbackImage,
-          spotify_url: song.spotify_url,
-        }));
-        setCards(cardsWithImages);
-        setCurrentIndex(0);
-      } catch (error) {
-        console.error("Failed to fetch recommendations:", error);
-      }
-    };
-
-    fetchRecommendations();
-  }, []);
-
+  
   const handleSwipe = (direction: "left" | "right") => {
     if (currentIndex >= cards.length) return;
+
+    saveSwipe(cards[currentIndex], direction, currentIndex);
 
     setLastDirection(direction);
     setSwipeDirection(direction);
