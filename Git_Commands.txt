@@ -1,0 +1,95 @@
+
+==============================
+🧠 GIT COMMANDS CHEAT SHEET
+==============================
+
+This is your personalized Git summary based on the commands you frequently use. Easy to scan, clear structure, and ready to save your project changes like a pro.
+
+----------------------------------
+🌱 BRANCHING: Starting & Switching
+----------------------------------
+
+✅ Create a new branch and switch to it:
+    git checkout -b branch-name
+
+✅ Switch to an existing branch:
+    git checkout branch-name
+
+
+---------------------------
+🔁 MERGING BRANCHES
+---------------------------
+
+✅ Merge another branch into your current one:
+    git merge other-branch-name
+
+✅ Example: Merge 'profilebuilder' into 'backend-swiping-setup':
+    git checkout backend-swiping-setup
+    git merge profilebuilder
+
+
+--------------------------------------
+🚨 MERGE CONFLICTS (Binary Files etc.)
+--------------------------------------
+
+✅ To keep YOUR version of a conflicted file:
+    git checkout --ours path/to/file
+
+✅ To take THEIR version (from incoming branch):
+    git checkout --theirs path/to/file
+
+✅ Then stage and commit:
+    git add path/to/file
+    git commit -m "Resolve conflict"
+
+
+---------------------------
+📦 SAVING & PUSHING CHANGES
+---------------------------
+
+✅ Stage all changes:
+    git add .
+
+✅ Commit with a message:
+    git commit -m "Describe what you did"
+
+✅ Push to GitHub:
+    git push
+
+✅ First push of a new branch:
+    git push -u origin branch-name
+
+
+-------------------------------
+🌐 REMOTE BRANCH OPERATIONS
+-------------------------------
+
+✅ See all remote branches:
+    git branch -r
+
+✅ Fetch latest changes from GitHub:
+    git fetch origin
+
+✅ Check out a remote branch (first time):
+    git checkout -b local-name origin/remote-branch-name
+
+
+----------------------------
+🔍 OTHER USEFUL COMMANDS
+----------------------------
+
+✅ See your current branch:
+    git branch
+
+✅ See what changed / what’s staged:
+    git status
+
+✅ See commit history (compact + visual):
+    git log --oneline --graph --all --decorate
+
+
+----------------------------
+💡 PRO TIP:
+----------------------------
+Use `git status` early and often to stay aware of what’s going on.
+
