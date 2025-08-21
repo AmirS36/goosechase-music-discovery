@@ -24,6 +24,4 @@ app.use('/api/swipes', swipesRoute);
 app.use('/api/auth', spotifyRoutes);
 app.use('/api/spotify-profile', spotifyProfileRoute);
 
-
-
 export default app;

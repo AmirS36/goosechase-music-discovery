@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSwipeable } from "react-swipeable";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7,22 +7,28 @@ import { User, LogOut, Home as HomeIcon, Search, Heart, Settings, ExternalLink }
 interface SongCard {
   title: string;
   artist: string;
-  preview_url?: string;
-  image_url?: string;
-  spotify_url?: string;
+  preview_url?: string | null;
+  image_url?: string | null;
+  spotify_url?: string | null;
 }
 
 const fallbackImage =
   "https://cdn.dribbble.com/userupload/29179303/file/original-2536efd374c53c282a258d4080eb7717.jpg";
 
+/* ----------------------------- Audio Player ----------------------------- */
 const CustomAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
-
+  
   useEffect(() => {
     setPlaying(true);
-    audioRef.current?.play();
+    audioRef.current?.play().catch(() => setPlaying(false));
+
+    // Pause when unmounting or when src changes away
+    return () => {
+      try { audioRef.current?.pause(); } catch {}
+    };
   }, [src]);
 
   const togglePlay = () => {
@@ -30,14 +36,14 @@ const CustomAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
     if (playing) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch(() => null);
     }
     setPlaying(!playing);
   };
 
   const handleTimeUpdate = () => {
     if (!audioRef.current) return;
-    const duration = audioRef.current.duration;
+    const duration = audioRef.current.duration || 1;
     setProgress((audioRef.current.currentTime / duration) * 100);
   };
 
@@ -77,6 +83,7 @@ const CustomAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
   );
 };
 
+/* ------------------------------- Utilities ------------------------------ */
 async function saveSwipe(card: SongCard, direction: "left" | "right", rank?: number) {
   try {
     const username = localStorage.getItem("username");
@@ -87,14 +94,14 @@ async function saveSwipe(card: SongCard, direction: "left" | "right", rank?: num
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username,
-        direction, // "left" | "right" is fine; server normalizes
+        direction,
         rank,
         metadata: {
           title: card.title,
           artist: card.artist,
           image_url: card.image_url,
           preview_url: card.preview_url,
-          spotify_url: card.spotify_url, // server extracts the 22-char id
+          spotify_url: card.spotify_url,
         },
       }),
     });
@@ -103,81 +110,101 @@ async function saveSwipe(card: SongCard, direction: "left" | "right", rank?: num
   }
 }
 
-
-const Discover = () => {
+/* --------------------------------- Page --------------------------------- */
+const Discover: React.FC = () => {
   const navigate = useNavigate();
+
   const [cards, setCards] = useState<SongCard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipeDirection, setSwipeDirection] = useState<"left" | "right" | null>(null);
   const [lastDirection, setLastDirection] = useState<"left" | "right" | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const fetchRecommendations = async () => {
-   try {
-     const response = await fetch(
-       "http://localhost:5000/api/discover?username=" + localStorage.getItem("username"),
-       {
-         method: "GET",
-         headers: {
-           "Content-Type": "application/json",
-         },
-       }
-     );
-     
-     const data = await response.json();
-     const cardsWithImages: SongCard[] = data.songs.map((song: any) => ({
-       title: song.title,
-       artist: song.artist,
-       preview_url: song.preview_url,
-       image_url: song.image_url || fallbackImage,
-       spotify_url: song.spotify_url,
-     }));
-     setCards(cardsWithImages);
-     setCurrentIndex(0);
-   } catch (error) {
-     console.error("Failed to fetch recommendations:", error);
-   }
- };
+  const fetchRecommendations = useCallback(async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const username = localStorage.getItem("username") || "";
+      const response = await fetch(
+        "http://localhost:5000/api/discover?username=" + encodeURIComponent(username),
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
-  // Check if we need more songs when currentIndex changes
+      if (!response.ok) {
+        console.error("Discover fetch failed with status:", response.status);
+        return;
+      }
+
+      const data = await response.json();
+      const newCards: SongCard[] = (data?.songs || []).map((song: any) => ({
+        title: song.title,
+        artist: song.artist,
+        preview_url: song.preview_url ?? null,
+        image_url: song.image_url || fallbackImage,
+        spotify_url: song.spotify_url ?? null,
+      }));
+
+      setCards((prev) => {
+        const seen = new Set(prev.map((c) => (c.spotify_url || `${c.title}|${c.artist}`)));
+        const unique = newCards.filter((c) => {
+          const key = c.spotify_url || `${c.title}|${c.artist}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        return [...prev, ...unique];
+      });
+    } catch (error) {
+      console.error("Failed to fetch recommendations:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [loading]);
+
   useEffect(() => {
-    // If we have 1 card left, fetch more
-    console.log("cards length=",cards.length);
-    console.log("currentIndex=", currentIndex);
-    if (cards.length==0 || cards.length - currentIndex === 1) {
+    if (cards.length === 0 && !loading) {
       fetchRecommendations();
     }
-  }, [currentIndex]);
+  }, [cards.length, loading, fetchRecommendations]);
 
-  
+  useEffect(() => {
+    const remaining = cards.length - currentIndex;
+    if (remaining <= 1 && !loading) {
+      fetchRecommendations();
+    }
+  }, [currentIndex, cards.length, loading, fetchRecommendations]);
+
   const handleSwipe = (direction: "left" | "right") => {
     if (currentIndex >= cards.length) return;
-
-    saveSwipe(cards[currentIndex], direction, currentIndex);
-
+    const card = cards[currentIndex];
+    saveSwipe(card, direction, currentIndex);
     setLastDirection(direction);
     setSwipeDirection(direction);
-
     setTimeout(() => {
-      setCurrentIndex((prevIndex) => prevIndex + 1);
+      setCurrentIndex((prev) => prev + 1);
+      setSwipeDirection(null);
+      setLastDirection(null);
     }, 50);
   };
 
-  // Reset animation state after transition
   useEffect(() => {
-    if (swipeDirection) {
-      const timer = setTimeout(() => {
-        setSwipeDirection(null);
-        setLastDirection(null);
-      }, 400);
-      return () => clearTimeout(timer);
-    }
-  }, [swipeDirection]);
+    if (!swipeDirection && !lastDirection) return;
+    const timer = setTimeout(() => {
+      setSwipeDirection(null);
+      setLastDirection(null);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [swipeDirection, lastDirection]);
 
   const swipeHandlers = useSwipeable({
     onSwipedLeft: () => handleSwipe("left"),
     onSwipedRight: () => handleSwipe("right"),
     preventScrollOnSwipe: true,
-    trackMouse: true,
+    trackMouse: false,
+    delta: 100,
   });
 
   const handleLogout = () => {
@@ -186,7 +213,6 @@ const Discover = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-purple-900 text-white flex flex-col">
-      {/* Top Section */}
       <header className="flex justify-between items-center p-4">
         <div className="flex items-center gap-2">
           <User className="w-6 h-6" />
@@ -201,73 +227,118 @@ const Discover = () => {
         </button>
       </header>
 
-      {/* Card Section */}
       <main className="flex-1 flex flex-col items-center justify-center px-6">
         <h1 className="text-2xl font-bold mb-4">Discover New Music</h1>
-        <div className="relative w-full max-w-sm aspect-[4/5]" {...swipeHandlers}> {/* Changed from max-w-md to max-w-sm */}
-          <AnimatePresence>
-            {cards.length > 0 && currentIndex < cards.length && (
-              <motion.div
-                key={cards[currentIndex].spotify_url || cards[currentIndex].title}
-                className="absolute w-full h-full rounded-lg flex flex-col shadow-lg overflow-hidden"
-                initial={{ x: swipeDirection === "right" ? 300 : -300, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: lastDirection === "right" ? 300 : -300, opacity: 0 }}
-                transition={{ duration: 0.4 }}
-              >
-                {/* Image Container - Removed padding and adjusted flex properties */}
-                <div className="w-full h-full flex items-start justify-center bg-black/5">
-                  <img
-                    src={cards[currentIndex].image_url}
-                    alt={cards[currentIndex].title}
-                    className="w-full h-full object-contain"
-                    style={{ objectPosition: 'top' }}
-                  />
-                </div>
+        <div className="relative w-full max-w-sm aspect-[4/5]" {...swipeHandlers}>
+          <AnimatePresence initial={false}>
+            {cards.length > 0 && currentIndex < cards.length ? (
+              cards.slice(currentIndex, currentIndex + 3).map((card, i) => {
+                const isTop = i === 0;
+                const depthScale = 1 - i * 0.04;
+                const depthOffset = i * 10;
+                const depthOpacity = 1 - i * 0.05;
+                const key = card.spotify_url || `${card.title}|${card.artist}|${i}`;
 
-                {/* Info Box - No changes needed here */}
-                <div className="absolute bottom-0 left-0 right-0 bg-black/50 backdrop-blur-sm px-4 py-3 flex flex-col items-center gap-2">
-                  <div className="w-full text-center">
-                    <h2 className="text-lg font-bold text-white/95 leading-tight">
-                      {cards[currentIndex].title}
-                    </h2>
-                    <p className="text-sm text-purple-200/90">
-                      {cards[currentIndex].artist}
-                    </p>
-                  </div>
-
-                  {cards[currentIndex].preview_url && (
-                    <div className="w-full">
-                      <CustomAudioPlayer src={cards[currentIndex].preview_url} />
-                    </div>
-                  )}
-
-                  <a
-                    href={cards[currentIndex].spotify_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-green-400/90 hover:text-green-300 text-sm transition-colors"
+                return (
+                  <motion.div
+                    key={key}
+                    className="absolute w-full h-full rounded-xl shadow-2xl overflow-hidden"
+                    style={{
+                      zIndex: 100 - i,
+                      pointerEvents: isTop ? "auto" : "none",
+                      isolation: "isolate",
+                    }}
+                    initial={{ scale: depthScale, y: depthOffset, opacity: depthOpacity }}
+                    animate={{ scale: depthScale, y: depthOffset, opacity: depthOpacity }}
+                    exit={
+                      isTop
+                        ? { x: lastDirection === "right" ? 300 : -300, opacity: 0 }
+                        : { opacity: 0 }
+                    }
+                    transition={{ type: "spring", stiffness: 260, damping: 24 }}
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    Listen on Spotify
-                  </a>
-                </div>
-              </motion.div>
+                    <div className="w-full h-full flex items-start justify-center bg-black/5">
+                      <img
+                        src={card.image_url || fallbackImage}
+                        alt={card.title}
+                        className="w-full h-full object-contain"
+                        style={{ objectPosition: "top" }}
+                      />
+                    </div>
+
+                    {isTop ? (
+                      <motion.div
+                        className="absolute bottom-0 left-0 right-0 px-4 py-3 flex flex-col items-center gap-2"
+                        style={{
+                          backgroundColor: "rgba(0,0,0,0.62)",
+                          WebkitBackdropFilter: "blur(8px)",
+                          backdropFilter: "blur(8px)",
+                          willChange: "opacity, transform",
+                          backfaceVisibility: "hidden",
+                          contain: "paint",
+                        }}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.18, delay: 0.05 }}
+                      >
+                        <div className="w-full text-center">
+                          <h2 className="text-lg font-bold text-white/95 leading-tight">
+                            {card.title}
+                          </h2>
+                          <p className="text-sm text-purple-200/90">{card.artist}</p>
+                        </div>
+
+                        {card.preview_url && (
+                          <div className="w-full">
+                            <CustomAudioPlayer src={card.preview_url} />
+                          </div>
+                        )}
+
+                        {card.spotify_url && (
+                          <a
+                            href={card.spotify_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-green-400/90 hover:text-green-300 text-sm transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Listen on Spotify
+                          </a>
+                        )}
+                      </motion.div>
+                    ) : (
+                      <div
+                        aria-hidden
+                        className="absolute bottom-0 left-0 right-0 pointer-events-none"
+                        style={{
+                          height: 88,
+                          background:
+                            "linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.0) 100%)",
+                        }}
+                      />
+                    )}
+                  </motion.div>
+                );
+              })
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                {loading ? (
+                  <p className="text-center text-gray-400">Loading more songs…</p>
+                ) : (
+                  <p className="text-center text-gray-400">No more cards to swipe!</p>
+                )}
+              </div>
             )}
           </AnimatePresence>
-          {currentIndex >= cards.length && (
-            <p className="text-center text-gray-400">No more cards to swipe!</p>
-          )}
         </div>
       </main>
 
-      {/* Bottom Navigation */}
       <nav className="bg-black/70 backdrop-blur-md h-16 flex items-center justify-around">
         <button onClick={() => navigate("/home")} className="flex flex-col items-center text-white">
           <HomeIcon className="w-6 h-6" />
           <span className="text-xs mt-1">Home</span>
         </button>
-        <button onClick={() => navigate("/discover")} className="flex flex-col items-center text-purple-400"> {/* Added text-purple-400 */}
+        <button onClick={() => navigate("/discover")} className="flex flex-col items-center text-purple-400">
           <Search className="w-6 h-6" />
           <span className="text-xs mt-1">Discover</span>
         </button>

@@ -1,0 +1,11 @@
+{
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+    ,"scripts": {
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd my-app && npm start",
+    "start:analysis": "cd analysis && uvicorn main:app --reload --port 8000",
+    "start:all": "concurrently \"npm run start:backend\" \"npm run start:frontend\" \"npm run start:analysis\""
+  }
+}
