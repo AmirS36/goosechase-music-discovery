@@ -7,6 +7,18 @@ This manual contains commonly used commands, setup instructions, and helpful ref
 General Server Commands (make sure you followed setup instructions beforhand)
 ---------------------------------------------------------
 
+# There is a way to run all 3 together for convenience (Harder for debeugging)
+# Make sure to install missing dependencies if needed ('concurrently' package using 'npm install' command from the root GooseChase folder)
+
+[Run all 3 (analysis + backend + frontend)]
+
+1. Make sure you're in the root folder
+
+2. Start all 3 server using the following command 
+   > npm run start:all
+
+
+
 [Analysis: Python FastAPI Server]
 
 1. Navigate to the Python backend folder:
@@ -40,6 +52,14 @@ General Server Commands (make sure you followed setup instructions beforhand)
 2. Open Prisma Studio (GUI for DB):
    > npx prisma studio
 
+
+[Frontend: React]
+
+1. Navigate to the frontend folder:
+   > cd my-app
+
+2. Start the react server
+   > npm start
 
 ---------------------------------------------------------
 Python Setup Instructions (analysis folder)
