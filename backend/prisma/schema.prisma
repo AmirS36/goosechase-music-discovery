@@ -28,10 +28,14 @@ model User {
   spotifyId             String? @unique
   spotifyDisplayName    String?
   spotifyImageUrl       String?
+
   spotifyAccessToken    String?
   spotifyRefreshToken   String?
-  spotifyTokenExpiresAt Int?
-
+  spotifyTokenExpiresAt DateTime?
+  spotifyTokenType      String?  // "Bearer"
+  spotifyScope          String?
+  spotifyLinkedAt       DateTime?
+  
   swipes Swipe[]
 }
 
