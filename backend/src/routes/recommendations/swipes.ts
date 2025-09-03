@@ -1,6 +1,7 @@
 // src/routes/swipes.ts
 import { Router, Request, Response } from "express";
 import prisma from "../../lib/prisma"; // default export only
+import { maybeUpdateUserLyricalTaste } from "../../workers/lyricalTasteWorker"; // <-- ADD
 
 const router = Router();
 
@@ -94,7 +95,16 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
       },
     });
 
-    res.json({ ok: true, swipeId: swipe.id });
+    // --- LYRICAL TASTE HOOK (fire-and-forget) ---
+    const tasteUpdateTriggered = direction === "RIGHT";
+    if (tasteUpdateTriggered) {
+      maybeUpdateUserLyricalTaste(user.id).catch(err =>
+        console.error("[lyricalTasteWorker] failed:", err)
+      );
+    }
+    // -------------------------------------------
+
+    res.json({ ok: true, swipeId: swipe.id, tasteUpdateTriggered });
   } catch (err) {
     console.error("[POST /api/swipes] error:", err);
     res.status(500).json({ error: "Failed to record swipe." });
