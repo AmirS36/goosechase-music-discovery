@@ -91,3 +91,11 @@ Spotify Preview Finder (Node.js helper)
 This package helps fetch working 30s preview URLs when Spotify doesn’t provide them.
 
 NPM: https://www.npmjs.com/package/spotify-preview-finder?activeTab=readme
+
+
+----------------------
+prisma setup
+----------------------
+npx prisma generate
+make .env file in prisma folder
+npx prisma migrate dev

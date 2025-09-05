@@ -147,29 +147,57 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
 });
 
 // Optional: liked tracks shortcut (?username=...&limit=100)
-router.get("/liked", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const username = String(req.query.username || "");
-    if (!username) {
-      res.status(400).json({ error: "Missing 'username' query param." });
-      return;
+router.get("/liked", async (req: Request, res: Response, next: Function): Promise<void> => {
+    try {
+      const username = String(req.query.username ?? "");
+      if (!username) {
+        res.status(400).json({ error: "Missing 'username' query param." });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({ where: { username } });
+      if (!user) {
+        res.status(404).json({ error: "User not found." });
+        return;
+      }
+
+      const limitParam = Number(req.query.limit ?? 100);
+      const limit = Math.max(1, Math.min(isFinite(limitParam) ? limitParam : 100, 500));
+
+      // pull more than limit so we can dedupe by trackId and still return 'limit' items
+      const raw = await prisma.swipe.findMany({
+        where: { userId: user.id, direction: "RIGHT" },
+        include: { track: true },
+        orderBy: { createdAt: "desc" },
+        take: Math.min(limit * 3, 1500),
+      });
+
+      const seen = new Set<string>();
+      const songs = [];
+      for (const s of raw) {
+        if (!s.track) continue;
+        if (seen.has(s.trackId)) continue;
+        seen.add(s.trackId);
+
+        songs.push({
+          id: s.trackId,
+          title: s.track.title,
+          artist: s.track.artist,
+          image_url: s.track.imageUrl,
+          preview_url: s.track.previewUrl,
+          spotify_url: s.track.spotifyUrl,
+          liked_at: s.createdAt,
+        });
+
+        if (songs.length >= limit) break;
+      }
+
+      res.json({ songs });
+    } catch (err) {
+      console.error("[GET /api/swipes/liked] error:", err);
+      next(err);
     }
-    const user = await prisma.user.findUnique({ where: { username } });
-    if (!user) {
-      res.status(404).json({ error: "User not found." });
-      return;
-    }
-    const liked = await prisma.swipe.findMany({
-      where: { userId: user.id, direction: "RIGHT" },
-      orderBy: { createdAt: "desc" },
-      include: { track: true },
-      take: Math.min(Math.max(parseInt(String(req.query.limit || "100"), 10) || 100, 1), 500),
-    });
-    res.json({ ok: true, liked });
-  } catch (err) {
-    console.error("[GET /api/swipes/liked] error:", err);
-    res.status(500).json({ error: "Failed to fetch liked tracks." });
   }
-});
+);
 
 export default router;

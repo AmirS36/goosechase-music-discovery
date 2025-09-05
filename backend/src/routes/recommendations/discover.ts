@@ -20,16 +20,14 @@ router.get("/", async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { username: username },
     });
-
     if (!user || !user.spotifyAccessToken) {
       res.status(404).json({ error: "User not found or missing token" });
       return
     }
-
     //const accessToken = user.spotifyAccessToken;
     // 🔑 make sure token is fresh
     const accessToken = await ensureFreshSpotifyToken(user);
-
+    
     // 2. Call Omri's API using fetch instead of axios
     const omriRes = await fetch("http://localhost:8000/recommend", {
       method: "POST",

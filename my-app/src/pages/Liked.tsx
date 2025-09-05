@@ -1,13 +1,59 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { User, LogOut, Home as HomeIcon, Search, Heart, Settings } from "lucide-react";
+import { User, LogOut, Home as HomeIcon, Search, Heart, Settings, ExternalLink } from "lucide-react";
 
-const Home = () => {
+type LikedSong = {
+  id: string;
+  title: string;
+  artist: string;
+  image_url?: string | null;
+  preview_url?: string | null;
+  spotify_url?: string | null;
+  liked_at?: string;
+};
+
+const fallbackImage =
+  "https://cdn.dribbble.com/userupload/29179303/file/original-2536efd374c53c282a258d4080eb7717.jpg";
+
+const Liked: React.FC = () => {
   const navigate = useNavigate();
+  const [songs, setSongs] = useState<LikedSong[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    const username = localStorage.getItem("username") || "";
+    if (!username) {
+      setLoading(false);
+      setErr("No username in session.");
+      return;
+    }
+
+    (async () => {
+      try {
+        // If you have a dev proxy, this can simply be `/api/swipes/liked?...`
+        const res = await fetch(
+          `http://localhost:5000/api/swipes/liked?username=${encodeURIComponent(username)}&limit=200`
+        );
+
+        const ct = res.headers.get("content-type") || "";
+        const text = await res.text();
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+        if (!ct.includes("application/json")) throw new Error(`Non-JSON: ${text.slice(0, 200)}`);
+
+        const data = JSON.parse(text);
+        const list: LikedSong[] = Array.isArray(data) ? data : (data?.songs ?? []);
+        setSongs(list);
+      } catch (e: any) {
+        setErr(e?.message || "Failed to load liked songs.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const handleLogout = () => {
-    // Clear user session (if applicable) and navigate to login
-    console.log("Logging out...");
     navigate("/");
   };
 
@@ -28,41 +74,78 @@ const Home = () => {
         </button>
       </header>
 
-      {/* Middle Section */}
-      <main className="flex-1 flex flex-col items-center justify-center px-6">
+      {/* Content */}
+      <main className="flex-1 px-6 py-4">
         <h1 className="text-2xl font-bold mb-4">Your previously liked songs</h1>
-        <div className="w-full h-48 bg-white/10 rounded-lg flex items-center justify-center">
-          <p className="text-gray-400">Your music player will go here</p>
-        </div>
+
+        {loading && <p className="text-white/80">Loading…</p>}
+
+        {!loading && err && (
+          <p className="text-sm text-red-300">Couldn’t load liked songs: {err}</p>
+        )}
+
+        {!loading && !err && songs.length === 0 && (
+          <p className="text-white/70">No liked songs yet — swipe right in Discover to add some!</p>
+        )}
+
+        {!loading && !err && songs.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {songs.map((s) => (
+              <div
+                key={s.id + (s.liked_at || "")}
+                className="rounded-xl bg-white/10 border border-white/10 p-3 flex flex-col gap-3"
+              >
+                <div className="w-full aspect-square bg-black/20 rounded-lg overflow-hidden">
+                  <img
+                    src={s.image_url || fallbackImage}
+                    alt={s.title}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div>
+                  <div className="font-semibold">{s.title}</div>
+                  <div className="text-sm text-white/70">{s.artist}</div>
+                  {s.liked_at && (
+                    <div className="text-xs text-white/50 mt-1">
+                      Liked {new Date(s.liked_at).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+                {s.preview_url && (
+                  <audio src={s.preview_url} controls className="w-full" preload="none" />
+                )}
+                {s.spotify_url && (
+                  <a
+                    href={s.spotify_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-green-300 hover:text-green-200 text-sm"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Listen on Spotify
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </main>
 
       {/* Bottom Navigation */}
       <nav className="bg-black/70 backdrop-blur-md h-16 flex items-center justify-around">
-        <button
-          onClick={() => navigate("/home")}
-          className="flex flex-col items-center text-white"
-        >
+        <button onClick={() => navigate("/home")} className="flex flex-col items-center text-white">
           <HomeIcon className="w-6 h-6" />
           <span className="text-xs mt-1">Home</span>
         </button>
-        <button
-          onClick={() => navigate("/discover")}
-          className="flex flex-col items-center text-white"
-        >
+        <button onClick={() => navigate("/discover")} className="flex flex-col items-center text-white">
           <Search className="w-6 h-6" />
           <span className="text-xs mt-1">Discover</span>
         </button>
-        <button
-          onClick={() => navigate("/liked")}
-          className="flex flex-col items-center text-white"
-        >
+        <button onClick={() => navigate("/liked")} className="flex flex-col items-center text-purple-400">
           <Heart className="w-6 h-6" />
           <span className="text-xs mt-1">Liked</span>
         </button>
-        <button
-          onClick={() => navigate("/settings")}
-          className="flex flex-col items-center text-white"
-        >
+        <button onClick={() => navigate("/settings")} className="flex flex-col items-center text-white">
           <Settings className="w-6 h-6" />
           <span className="text-xs mt-1">Settings</span>
         </button>
@@ -71,4 +154,4 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default Liked;

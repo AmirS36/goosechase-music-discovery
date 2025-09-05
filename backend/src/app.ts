@@ -8,6 +8,7 @@ import discoverRoute from './routes/recommendations/discover';
 import swipesRoute from './routes/recommendations/swipes';
 import spotifyRoutes from './routes/spotify';
 import spotifyProfileRoute from './routes/spotify/spotifyProfile';
+import tasteRouter from "./routes/taste";
 
 require('dotenv').config(); // Ensure dotenv is loaded before importing routes
 
@@ -23,5 +24,6 @@ app.use('/api/discover', discoverRoute);
 app.use('/api/swipes', swipesRoute);
 app.use('/api/auth', spotifyRoutes);
 app.use('/api/spotify-profile', spotifyProfileRoute);
+app.use("/api/taste", tasteRouter);
 
 export default app;
