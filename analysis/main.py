@@ -5,12 +5,16 @@ from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from ChatxLastFMreccomends import get_recommendations_from_swipes
 from ChatxLastFMreccomends import get_spotify_starting_songs
+from typing import Optional, List
 
 app = FastAPI()
 
 class RecommendRequest(BaseModel):
     spotify_token: str
-    username: str
+    username: Optional[str] = None
+    weather_api_key: Optional[str] = None
+    lastfm_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
 
 class DiscoverRequest(BaseModel):
     accessToken: str

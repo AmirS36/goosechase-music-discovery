@@ -477,19 +477,80 @@ def fetch_user_swipes(username, base_url="http://localhost:5000", direction=None
         })
     return out
 
-def get_spotify_recommendations_from_swipes(access_token, seed_track_ids, limit=20):
-    if not seed_track_ids:
-        return []
-    # Spotify allows up to 5 seed tracks
-    seeds = ",".join(list(dict.fromkeys(seed_track_ids))[:5])
+# def get_spotify_recommendations_from_swipes(access_token, seed_track_ids, limit=20):
+#     if not seed_track_ids:
+#         return []
+#     # Spotify allows up to 5 seed tracks
+#     seeds = ",".join(list(dict.fromkeys(seed_track_ids))[:5])
+#     url = "https://api.spotify.com/v1/recommendations"
+#     headers = {"Authorization": f"Bearer {access_token}"}
+#     params = {"limit": limit, "seed_tracks": seeds}
+#     resp = requests.get(url, headers=headers, params=params, timeout=10)
+#     if resp.status_code != 200:
+#         print("Spotify recs error:", resp.status_code, resp.text)
+#         return []
+#     tracks = resp.json().get("tracks", [])
+#     return [_simplify_spotify_track(t) for t in tracks]
+
+import re, requests
+ID_RE = re.compile(r"^[A-Za-z0-9]{22}$")
+
+def _extract_track_id(s: str | None) -> str | None:
+    if not s:
+        return None
+    s = s.strip()
+    if ID_RE.match(s):
+        return s
+    # try to pull id from a spotify URL
+    m = re.search(r"/track/([A-Za-z0-9]{22})", s)
+    return m.group(1) if m else None
+
+def get_spotify_recommendations_from_swipes(
+    access_token: str,
+    seed_track_ids: list[str],
+    limit: int = 20,
+    market: str | None = "from_token",  # set to "from_token" for user tokens, or e.g. "IL"
+):
+    # 1) normalize + validate seeds
+    seeds = []
+    for s in (seed_track_ids or []):
+        tid = _extract_track_id(s)
+        if tid:
+            seeds.append(tid)
+    # de-dupe, keep order, max 5
+    seen = set()
+    seeds = [x for x in seeds if not (x in seen or seen.add(x))][:5]
+
+    if not seeds:
+        # make this loud so you see the real problem upstream
+        raise ValueError(f"No valid seed track IDs. Got: {seed_track_ids!r}")
+
+    # 2) build request
     url = "https://api.spotify.com/v1/recommendations"
     headers = {"Authorization": f"Bearer {access_token}"}
-    params = {"limit": limit, "seed_tracks": seeds}
-    resp = requests.get(url, headers=headers, params=params, timeout=10)
-    if resp.status_code != 200:
-        print("Spotify recs error:", resp.status_code, resp.text)
-        return []
-    tracks = resp.json().get("tracks", [])
+    params = {
+        "limit": max(1, min(int(limit or 20), 100)),
+        "seed_tracks": ",".join(seeds),
+    }
+    if market:
+        params["market"] = market
+
+    # 3) call + robust error logs
+    r = requests.get(url, headers=headers, params=params, timeout=15)
+    if r.status_code != 200:
+        print("Spotify recs error:", r.status_code)
+        try:
+            print("Response JSON:", r.json())
+        except Exception:
+            print("Response text:", (r.text or "")[:500])
+        print("Request URL:", r.url)
+        print("Params used:", params)
+        # bubble up so caller can handle (don’t silently return [])
+        from fastapi import HTTPException
+        raise HTTPException(status_code=502, detail=f"spotify_recommendations_failed_{r.status_code}")
+
+    data = r.json() or {}
+    tracks = data.get("tracks", [])
     return [_simplify_spotify_track(t) for t in tracks]
 
 def get_recommendations_from_swipes(spotify_token, username, node_base_url="http://localhost:5000", limit=5):

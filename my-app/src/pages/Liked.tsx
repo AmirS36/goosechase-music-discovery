@@ -1,6 +1,7 @@
+// frontend/src/pages/Liked.tsx (full page with "Unlike")
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { User, LogOut, Home as HomeIcon, Search, Heart, Settings, ExternalLink } from "lucide-react";
+import { User, LogOut, Home as HomeIcon, Search, Heart, Settings, ExternalLink, ThumbsDown } from "lucide-react";
 
 type LikedSong = {
   id: string;
@@ -21,30 +22,21 @@ const Liked: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
+  async function fetchLiked() {
     const username = localStorage.getItem("username") || "";
-    if (!username) {
-      setLoading(false);
-      setErr("No username in session.");
-      return;
-    }
+    const res = await fetch(`http://localhost:5000/api/swipes/liked?username=${encodeURIComponent(username)}&limit=200`);
+    const ct = res.headers.get("content-type") || "";
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    if (!ct.includes("application/json")) throw new Error(`Non-JSON: ${text.slice(0, 200)}`);
+    const data = JSON.parse(text);
+    setSongs(Array.isArray(data) ? data : (data?.songs ?? []));
+  }
 
+  useEffect(() => {
     (async () => {
       try {
-        // If you have a dev proxy, this can simply be `/api/swipes/liked?...`
-        const res = await fetch(
-          `http://localhost:5000/api/swipes/liked?username=${encodeURIComponent(username)}&limit=200`
-        );
-
-        const ct = res.headers.get("content-type") || "";
-        const text = await res.text();
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-        if (!ct.includes("application/json")) throw new Error(`Non-JSON: ${text.slice(0, 200)}`);
-
-        const data = JSON.parse(text);
-        const list: LikedSong[] = Array.isArray(data) ? data : (data?.songs ?? []);
-        setSongs(list);
+        await fetchLiked();
       } catch (e: any) {
         setErr(e?.message || "Failed to load liked songs.");
       } finally {
@@ -53,9 +45,29 @@ const Liked: React.FC = () => {
     })();
   }, []);
 
-  const handleLogout = () => {
-    navigate("/");
+  const unlike = async (trackId: string) => {
+    const username = localStorage.getItem("username") || "";
+    // optimistic update
+    setSongs(prev => prev.filter(s => s.id !== trackId));
+    try {
+      const res = await fetch(`http://localhost:5000/api/swipes/unlike`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, trackId }),
+      });
+      if (!res.ok) {
+        // revert on failure
+        await fetchLiked();
+        const t = await res.text();
+        throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
+      }
+      // Optionally: trigger a toast “Removed from liked”
+    } catch (e) {
+      console.error("Unlike failed:", e);
+    }
   };
+
+  const handleLogout = () => navigate("/");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-purple-900 text-white flex flex-col">
@@ -75,7 +87,7 @@ const Liked: React.FC = () => {
       </header>
 
       {/* Content */}
-      <main className="flex-1 px-6 py-4">
+      <main className="flex-1 px-6 py-4 pb-24">
         <h1 className="text-2xl font-bold mb-4">Your previously liked songs</h1>
 
         {loading && <p className="text-white/80">Loading…</p>}
@@ -95,13 +107,22 @@ const Liked: React.FC = () => {
                 key={s.id + (s.liked_at || "")}
                 className="rounded-xl bg-white/10 border border-white/10 p-3 flex flex-col gap-3"
               >
-                <div className="w-full aspect-square bg-black/20 rounded-lg overflow-hidden">
+                <div className="w-full aspect-square bg-black/20 rounded-lg overflow-hidden relative">
                   <img
                     src={s.image_url || fallbackImage}
                     alt={s.title}
                     className="w-full h-full object-cover"
                   />
+                  <button
+                    onClick={() => unlike(s.id)}
+                    className="absolute top-2 right-2 px-2 py-1 rounded-md bg-black/60 hover:bg-black/70 text-xs inline-flex items-center gap-1"
+                    title="Unlike"
+                  >
+                    <ThumbsDown className="w-3.5 h-3.5" />
+                    Unlike
+                  </button>
                 </div>
+
                 <div>
                   <div className="font-semibold">{s.title}</div>
                   <div className="text-sm text-white/70">{s.artist}</div>
@@ -111,6 +132,7 @@ const Liked: React.FC = () => {
                     </div>
                   )}
                 </div>
+
                 {s.preview_url && (
                   <audio src={s.preview_url} controls className="w-full" preload="none" />
                 )}
@@ -132,23 +154,25 @@ const Liked: React.FC = () => {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="bg-black/70 backdrop-blur-md h-16 flex items-center justify-around">
-        <button onClick={() => navigate("/home")} className="flex flex-col items-center text-white">
-          <HomeIcon className="w-6 h-6" />
-          <span className="text-xs mt-1">Home</span>
-        </button>
-        <button onClick={() => navigate("/discover")} className="flex flex-col items-center text-white">
-          <Search className="w-6 h-6" />
-          <span className="text-xs mt-1">Discover</span>
-        </button>
-        <button onClick={() => navigate("/liked")} className="flex flex-col items-center text-purple-400">
-          <Heart className="w-6 h-6" />
-          <span className="text-xs mt-1">Liked</span>
-        </button>
-        <button onClick={() => navigate("/settings")} className="flex flex-col items-center text-white">
-          <Settings className="w-6 h-6" />
-          <span className="text-xs mt-1">Settings</span>
-        </button>
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-md h-16 border-t border-white/10">
+        <div className="h-full flex items-center justify-around">
+          <button onClick={() => navigate("/home")} className="flex flex-col items-center text-white">
+            <HomeIcon className="w-6 h-6" />
+            <span className="text-xs mt-1">Home</span>
+          </button>
+          <button onClick={() => navigate("/discover")} className="flex flex-col items-center text-white">
+            <Search className="w-6 h-6" />
+            <span className="text-xs mt-1">Discover</span>
+          </button>
+          <button onClick={() => navigate("/liked")} className="flex flex-col items-center text-purple-400">
+            <Heart className="w-6 h-6" />
+            <span className="text-xs mt-1">Liked</span>
+          </button>
+          <button onClick={() => navigate("/settings")} className="flex flex-col items-center text-white">
+            <Settings className="w-6 h-6" />
+            <span className="text-xs mt-1">Settings</span>
+          </button>
+        </div>
       </nav>
     </div>
   );

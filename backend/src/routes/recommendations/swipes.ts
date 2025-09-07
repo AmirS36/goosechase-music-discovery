@@ -2,6 +2,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../../lib/prisma"; // default export only
 import { maybeUpdateUserLyricalTaste } from "../../workers/lyricalTasteWorker"; // <-- ADD
+import { rebuildUserLyricalTaste } from "../../services/rebuildTaste"; 
 
 const router = Router();
 
@@ -146,8 +147,79 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Optional: liked tracks shortcut (?username=...&limit=100)
-router.get("/liked", async (req: Request, res: Response, next: Function): Promise<void> => {
+/**
+ * POST /api/swipes/unlike
+ * Body: { username: string, trackId?: string, spotify_url?: string }
+ */
+router.post(
+  "/unlike",
+  async (req: Request, res: Response, next: Function): Promise<void> => {
+    try {
+      const { username, trackId, spotify_url } = req.body ?? {};
+      if (!username) {
+        res.status(400).json({ error: "Missing 'username' in body." });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({ where: { username } });
+      if (!user) {
+        res.status(404).json({ error: "User not found." });
+        return;
+      }
+
+      // Resolve trackId (prefer provided ID; else from spotify_url)
+      let id = typeof trackId === "string" ? trackId.trim() : "";
+      if (!id && typeof spotify_url === "string") {
+        const m = spotify_url.match(/\/track\/([A-Za-z0-9]{22})/);
+        if (m) id = m[1];
+      }
+      if (!id) {
+        res.status(400).json({ error: "Missing 'trackId' or 'spotify_url'." });
+        return;
+      }
+
+      // Ensure track exists (no-op if already there)
+      await prisma.track.upsert({
+        where: { id },
+        update: {},
+        create: {
+          id,
+          title: "Unknown title",
+          artist: "Unknown artist",
+          spotifyUrl: `https://open.spotify.com/track/${id}`,
+        },
+      });
+
+      // Record a LEFT swipe (we keep history; latest wins)
+      await prisma.swipe.create({
+        data: { userId: user.id, trackId: id, direction: "LEFT" },
+        select: { id: true },
+      });
+
+      // Rebuild lyrical taste from *current* likes (no new OpenAI calls)
+      setImmediate(async () => {
+        try {
+          await rebuildUserLyricalTaste(user.id);
+        } catch (e) {
+          console.error("[rebuildUserLyricalTaste] failed:", e);
+        }
+      });
+
+      res.json({ ok: true, trackId: id });
+    } catch (err) {
+      console.error("[POST /api/swipes/unlike] error:", err);
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /api/swipes/liked?username=NAME&limit=100
+ * Returns current liked songs where the *latest* swipe per track is RIGHT.
+ */
+router.get(
+  "/liked",
+  async (req: Request, res: Response, next: Function): Promise<void> => {
     try {
       const username = String(req.query.username ?? "");
       if (!username) {
@@ -164,33 +236,34 @@ router.get("/liked", async (req: Request, res: Response, next: Function): Promis
       const limitParam = Number(req.query.limit ?? 100);
       const limit = Math.max(1, Math.min(isFinite(limitParam) ? limitParam : 100, 500));
 
-      // pull more than limit so we can dedupe by trackId and still return 'limit' items
-      const raw = await prisma.swipe.findMany({
-        where: { userId: user.id, direction: "RIGHT" },
+      // Get a big enough window, newest first
+      const swipes = await prisma.swipe.findMany({
+        where: { userId: user.id },
         include: { track: true },
         orderBy: { createdAt: "desc" },
-        take: Math.min(limit * 3, 1500),
+        take: Math.min(limit * 6, 2000),
       });
 
-      const seen = new Set<string>();
-      const songs = [];
-      for (const s of raw) {
+      // Latest swipe wins per track
+      const latest: Record<string, typeof swipes[number]> = {};
+      for (const s of swipes) {
         if (!s.track) continue;
-        if (seen.has(s.trackId)) continue;
-        seen.add(s.trackId);
-
-        songs.push({
-          id: s.trackId,
-          title: s.track.title,
-          artist: s.track.artist,
-          image_url: s.track.imageUrl,
-          preview_url: s.track.previewUrl,
-          spotify_url: s.track.spotifyUrl,
-          liked_at: s.createdAt,
-        });
-
-        if (songs.length >= limit) break;
+        if (latest[s.trackId]) continue; // already have the latest one (we're iterating desc)
+        latest[s.trackId] = s;
       }
+
+      const songs = Object.values(latest)
+        .filter(s => s.direction === "RIGHT" && s.track)
+        .slice(0, limit)
+        .map(s => ({
+          id: s.trackId,
+          title: s.track!.title,
+          artist: s.track!.artist,
+          image_url: s.track!.imageUrl,
+          preview_url: s.track!.previewUrl,
+          spotify_url: s.track!.spotifyUrl,
+          liked_at: s.createdAt,
+        }));
 
       res.json({ songs });
     } catch (err) {
@@ -199,5 +272,4 @@ router.get("/liked", async (req: Request, res: Response, next: Function): Promis
     }
   }
 );
-
 export default router;

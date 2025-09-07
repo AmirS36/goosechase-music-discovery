@@ -1,84 +1,229 @@
-// src/routes/discover.ts
-import express from "express";
-import prisma from "../../lib/prisma"; // adjust path if needed
-import { ensureFreshSpotifyToken } from "../spotify"; // path to your helper
+// backend/src/routes/discover.ts
+import express, { Request, Response, NextFunction } from "express";
+import prisma from "../../lib/prisma";
+import { recommendSongsByOpenAI } from "../../services/openai/recommender";
 
-const spotifyPreviewFinder = require('spotify-preview-finder');
 const router = express.Router();
 
-router.get("/", async (req, res) => {
-  console.log("[/api/discover GET] query:", req.query);
-  const username = req.query.username as string;
+/* ---------------- Spotify helpers (app token + search) ---------------- */
 
-  if (!username) {
-    res.status(400).json({ error: "Missing username" });
-    return
-  }
+let SPOTIFY_TOKEN_CACHE: { access_token: string; expires_at: number } | null = null;
 
+async function getSpotifyAppToken(): Promise<string | null> {
   try {
-    // 1. Get user from DB
-    const user = await prisma.user.findUnique({
-      where: { username: username },
-    });
-    if (!user || !user.spotifyAccessToken) {
-      res.status(404).json({ error: "User not found or missing token" });
-      return
+    const now = Math.floor(Date.now() / 1000);
+    if (SPOTIFY_TOKEN_CACHE && SPOTIFY_TOKEN_CACHE.expires_at - 30 > now) {
+      return SPOTIFY_TOKEN_CACHE.access_token;
     }
-    //const accessToken = user.spotifyAccessToken;
-    // 🔑 make sure token is fresh
-    const accessToken = await ensureFreshSpotifyToken(user);
-    
-    // 2. Call Omri's API using fetch instead of axios
-    const omriRes = await fetch("http://localhost:8000/recommend", {
+    const id = process.env.SPOTIFY_CLIENT_ID;
+    const secret = process.env.SPOTIFY_CLIENT_SECRET;
+    if (!id || !secret) return null;
+
+    const body = new URLSearchParams({ grant_type: "client_credentials" });
+    const res = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        spotify_token: accessToken,
-        username, // <- use the req.query.username already validated above
-      }),
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${id}:${secret}`).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
     });
+    if (!res.ok) return null;
+    const j = await res.json();
+    SPOTIFY_TOKEN_CACHE = {
+      access_token: j.access_token,
+      expires_at: Math.floor(Date.now() / 1000) + (j.expires_in || 3600),
+    };
+    return SPOTIFY_TOKEN_CACHE.access_token;
+  } catch {
+    return null;
+  }
+}
 
-    if (!omriRes.ok) {
-      throw new Error(`Omri's API error: ${omriRes.status}`);
-    }
+function norm(s: string) {
+  return (s || "")
+    .toLowerCase()
+    .replace(/\s*\([^)]*\)/g, "") // drop (feat...) (remaster...)
+    .replace(/\s*-\s*(remaster|radio edit|single|live).*/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .trim();
+}
 
-    const { recommendations } = await omriRes.json();
-    const tracks = recommendations; // same simplified shape used later
+async function resolveWithSpotify(title: string, artist: string) {
+  const token = await getSpotifyAppToken();
+  if (!token) return null;
 
-  
-    // Step 3: Enrich each track with a preview URL using spotifyPreviewFinder
-    const enrichedTracks = await Promise.all(
-      tracks.map(async (track: any) => {
-        const query = `${track.title} - ${track.artist}`;
-        try {
-          const result = await spotifyPreviewFinder(query, 1);
-          const previewUrl = result.success && result.results[0]?.previewUrls?.[0] || null;
+  const q = encodeURIComponent(`track:${title} artist:${artist}`);
+  const url = `https://api.spotify.com/v1/search?type=track&limit=5&q=${q}`;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null);
+  const items: any[] = j?.tracks?.items || [];
+  if (items.length === 0) return null;
 
+  // Prefer a result with preview_url AND close artist/title match
+  const nt = norm(title);
+  const na = norm(artist);
+
+  const scored = items.map((t) => {
+    const tTitle = norm(t?.name || "");
+    const tArtists = (t?.artists || []).map((a: any) => norm(a?.name || ""));
+    const titleScore = tTitle === nt ? 2 : tTitle.includes(nt) ? 1 : 0;
+    const artistScore = tArtists.includes(na) ? 2 : tArtists.some((a: string) => a && na && (a.includes(na) || na.includes(a))) ? 1 : 0;
+    const hasPreview = t?.preview_url ? 1 : 0;
+    return { t, score: titleScore * 3 + artistScore * 3 + hasPreview };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  // Prefer the top-scored with preview_url; else just top-scored
+  const withPreview = scored.find((s) => s.t?.preview_url)?.t || scored[0].t;
+  const images = withPreview?.album?.images || [];
+  return {
+    id: withPreview?.id || null,
+    title: withPreview?.name || title,
+    artist: (withPreview?.artists || []).map((a: any) => a?.name).filter(Boolean).join(", ") || artist,
+    preview_url: withPreview?.preview_url || null,
+    image_url: images[0]?.url || null,
+    spotify_url: withPreview?.external_urls?.spotify || null,
+  };
+}
+
+/* ---------------- iTunes fallback (for preview/art) ---------------- */
+
+async function resolveWithITunes(title: string, artist: string) {
+  const q = encodeURIComponent(`${title} ${artist}`);
+  const url = `https://itunes.apple.com/search?term=${q}&entity=song&limit=1`;
+  const r = await fetch(url);
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null);
+  const it = j?.results?.[0];
+  if (!it) return null;
+
+  const art = typeof it.artworkUrl100 === "string"
+    ? it.artworkUrl100.replace("100x100bb", "600x600bb")
+    : it.artworkUrl100;
+
+  return {
+    id: String(it.trackId),
+    title: it.trackName,
+    artist: it.artistName,
+    preview_url: it.previewUrl || null,
+    image_url: art || null,
+    // keep field name for UI compatibility
+    spotify_url: it.trackViewUrl || it.collectionViewUrl || null,
+  };
+}
+
+/* ---------------- Route: /api/discover ---------------- */
+
+router.get("/", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const username = String(req.query.username ?? "");
+    if (!username) return void res.status(400).json({ error: "Missing username" });
+
+    const user = await prisma.user.findUnique({ where: { username } });
+    if (!user) return void res.status(404).json({ error: "User not found" });
+
+    // 1) recent RIGHT swipes
+    const swipes = await prisma.swipe.findMany({
+      where: { userId: user.id, direction: "RIGHT" },
+      include: { track: true },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    const likes = swipes
+      .filter((s) => s.track)
+      .map((s) => ({ title: s.track!.title, artist: s.track!.artist }));
+
+    // 2) optional taste snapshot
+    const tasteRow = await prisma.userLyricalTaste.findUnique({
+      where: { userId: user.id },
+      select: {
+        topThemesJSON: true,
+        dominantMood: true,
+        dominantStyle: true,
+        grandStyle: true,
+        grandStyleAvg: true,
+        langPrefsJSON: true,
+      },
+    });
+    const taste = tasteRow
+      ? {
+          topThemes: safeParseArr(tasteRow.topThemesJSON),
+          dominantMood: tasteRow.dominantMood,
+          dominantStyle: tasteRow.dominantStyle,
+          grandStyle: tasteRow.grandStyle,
+          grandStyleAvg: tasteRow.grandStyleAvg,
+          langPrefs: safeParseLangPrefs(tasteRow.langPrefsJSON),
+        }
+      : undefined;
+
+    // 3) ask OpenAI for suggestions
+    const limit = 8;
+    const aiSongs = await recommendSongsByOpenAI({ likes, taste, limit });
+
+    // 4) filter out already liked (title+artist)
+    const seenPairs = new Set(likes.map((l) => (l.title + "||" + l.artist).toLowerCase()));
+    const fresh = aiSongs.filter(
+      (s) => !seenPairs.has((s.title + "||" + s.artist).toLowerCase())
+    );
+
+    // 5) Resolve: Spotify first (to get preview), then iTunes fallback
+    const resolved = await Promise.all(
+      fresh.map(async (s) => {
+        const sp = await resolveWithSpotify(s.title, s.artist);
+        if (sp?.preview_url) return sp;
+
+        // If Spotify found the track but no preview, try iTunes just for preview/art
+        if (sp) {
+          const it = await resolveWithITunes(s.title, s.artist);
           return {
-            ...track,
-            preview_url: previewUrl,
-          };
-        } catch (e) {
-          console.warn(`Preview finder failed for "${query}":`, e);
-          return {
-            ...track,
-            preview_url: null,
+            id: sp.id || it?.id || null,
+            title: sp.title,
+            artist: sp.artist,
+            preview_url: sp.preview_url || it?.preview_url || null,
+            image_url: sp.image_url || it?.image_url || null,
+            spotify_url: sp.spotify_url || it?.spotify_url || null,
           };
         }
+
+        // Spotify found nothing — use iTunes only
+        const it = await resolveWithITunes(s.title, s.artist);
+        return (
+          it || {
+            id: null,
+            title: s.title,
+            artist: s.artist,
+            preview_url: null,
+            image_url: null,
+            spotify_url: null,
+          }
+        );
       })
     );
 
-    console.log("songs fetched from Omri's API (with preview URL's):", enrichedTracks);
-
-    // 4. Return the songs to the frontend
-    res.json({ songs: enrichedTracks });
-    return;
-
-  } catch (error) {
-    console.error("Error in /discover:", error);
-    res.status(500).json({ error: "Internal server error" });
-    return;
+    const songs = resolved.filter((x) => x && x.title && x.artist).slice(0, limit);
+    res.json({ songs });
+  } catch (err) {
+    console.error("Error in /discover:", err);
+    next(err);
   }
 });
+
+function safeParseArr(s?: string | null): string[] {
+  if (!s) return [];
+  try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+function safeParseLangPrefs(s?: string | null): Array<{ lang: string; share: number }> {
+  if (!s) return [];
+  try {
+    const arr = JSON.parse(s);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((x: any) => ({ lang: String(x?.lang || ""), share: Number(x?.share || 0) }))
+      .filter((x) => x.lang);
+  } catch { return []; }
+}
 
 export default router;
