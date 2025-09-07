@@ -1,7 +1,8 @@
 // backend/src/routes/discover.ts
 import express, { Request, Response, NextFunction } from "express";
 import prisma from "../../lib/prisma";
-import { recommendSongsByOpenAI } from "../../services/openai/recommender";
+import { recommendSongsByOpenAI, recommendStarterPackByOpenAI } from "../../services/openai/recommender";
+
 
 const router = express.Router();
 
@@ -136,6 +137,22 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       .filter((s) => s.track)
       .map((s) => ({ title: s.track!.title, artist: s.track!.artist }));
 
+    // 1b) Recent LEFT swipes (dislikes) -------
+    const dislikedSwipes = await prisma.swipe.findMany({
+      where: { userId: user.id, direction: "LEFT" },
+      include: { track: true },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    const dislikes = dislikedSwipes
+      .filter((s) => s.track)
+      .map((s) => ({
+        id: s.track!.id,                 // Spotify track id if you stored it
+        title: s.track!.title,
+        artist: s.track!.artist,
+      }));
+
+
     // 2) optional taste snapshot
     const tasteRow = await prisma.userLyricalTaste.findUnique({
       where: { userId: user.id },
@@ -160,14 +177,31 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       : undefined;
 
     // 3) ask OpenAI for suggestions
+    // likes = RIGHT swipes mapped to [{title, artist}]
+    let aiSongs: Array<{ title: string; artist: string }>;
     const limit = 8;
-    const aiSongs = await recommendSongsByOpenAI({ likes, taste, limit });
+          
+    // COLD START: no history → diverse cross-genre starter pack from OpenAI
+    if (likes.length === 0) {
+      aiSongs = await recommendStarterPackByOpenAI(limit);
+    } else {
+      // Personalized followups guided by likes (and optional taste snapshot)
+      aiSongs = await recommendSongsByOpenAI({ likes, taste, limit });
+    }
 
-    // 4) filter out already liked (title+artist)
-    const seenPairs = new Set(likes.map((l) => (l.title + "||" + l.artist).toLowerCase()));
-    const fresh = aiSongs.filter(
-      (s) => !seenPairs.has((s.title + "||" + s.artist).toLowerCase())
-    );
+    // 4) Build liked/disliked lookup sets ---------- (NEW: include dislikes)
+    const pairKey = (t: string, a: string) =>
+      `${(t || "").toLowerCase().trim()}||${(a || "").toLowerCase().trim()}`;
+
+    const likedPairs = new Set(likes.map((l) => pairKey(l.title, l.artist)));
+    const dislikedPairs = new Set(dislikes.map((d) => pairKey(d.title, d.artist)));
+    const dislikedIds = new Set(dislikes.map((d) => d.id).filter(Boolean));
+
+    // Exclude anything already liked OR disliked before resolving
+    const fresh = aiSongs.filter((s) => {
+      const k = pairKey(s.title, s.artist);
+      return !likedPairs.has(k) && !dislikedPairs.has(k);
+    });
 
     // 5) Resolve: Spotify first (to get preview), then iTunes fallback
     const resolved = await Promise.all(
@@ -203,7 +237,17 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       })
     );
 
-    const songs = resolved.filter((x) => x && x.title && x.artist).slice(0, limit);
+    // 6) NEW: Final filter against disliked (by pair AND by track id)
+    const songs = resolved
+      .filter((x) => x && x.title && x.artist)
+      .filter((x) => {
+        const k = pairKey(x.title, x.artist);
+        if (dislikedPairs.has(k)) return false;
+        if (x.id && dislikedIds.has(x.id)) return false; // works when we resolved to the same Spotify track
+        return true;
+      })
+      .slice(0, limit);
+
     res.json({ songs });
   } catch (err) {
     console.error("Error in /discover:", err);
