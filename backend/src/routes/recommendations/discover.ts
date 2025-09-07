@@ -207,9 +207,14 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     const resolved = await Promise.all(
       fresh.map(async (s) => {
         const sp = await resolveWithSpotify(s.title, s.artist);
-        if (sp?.preview_url) return sp;
+        if (sp?.preview_url) {
+          return {
+            ...sp,
+            MIL: s.MIL, // <- pass through
+            MIL_EXP: s.MIL_EXP, // <- pass through
+          };
+        }
 
-        // If Spotify found the track but no preview, try iTunes just for preview/art
         if (sp) {
           const it = await resolveWithITunes(s.title, s.artist);
           return {
@@ -219,36 +224,47 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
             preview_url: sp.preview_url || it?.preview_url || null,
             image_url: sp.image_url || it?.image_url || null,
             spotify_url: sp.spotify_url || it?.spotify_url || null,
+            MIL: s.MIL,
+            MIL_EXP: s.MIL_EXP,
           };
         }
 
-        // Spotify found nothing — use iTunes only
         const it = await resolveWithITunes(s.title, s.artist);
-        return (
-          it || {
-            id: null,
-            title: s.title,
-            artist: s.artist,
-            preview_url: null,
-            image_url: null,
-            spotify_url: null,
-          }
-        );
+        return it
+          ? {
+              ...it,
+              MIL: s.MIL,
+              MIL_EXP: s.MIL_EXP,
+            }
+          : {
+              id: null,
+              title: s.title,
+              artist: s.artist,
+              preview_url: null,
+              image_url: null,
+              spotify_url: null,
+              MIL: s.MIL,
+              MIL_EXP: s.MIL_EXP,
+            };
       })
     );
 
     // 6) NEW: Final filter against disliked (by pair AND by track id)
-    const songs = resolved
-      .filter((x) => x && x.title && x.artist)
-      .filter((x) => {
-        const k = pairKey(x.title, x.artist);
-        if (dislikedPairs.has(k)) return false;
-        if (x.id && dislikedIds.has(x.id)) return false; // works when we resolved to the same Spotify track
-        return true;
-      })
-      .slice(0, limit);
+   const normalized = resolved.map((s: any) => ({
+     id: s.id ?? null,
+     title: String(s.title ?? "").trim(),
+     artist: String(s.artist ?? "").trim(),
+     preview_url: s.preview_url ?? null,
+     image_url: s.image_url ?? null,
+     spotify_url: s.spotify_url ?? null,
+     MIL: String(s.MIL ?? "").trim(),
+     MIL_EXP: String(s.MIL_EXP ?? "").trim(),
+   }));
 
-    res.json({ songs });
+   const cleaned = normalized.filter((s) => s.title && s.artist);
+   const songs = cleaned.slice(0, limit);
+
+   return res.json({ songs });
   } catch (err) {
     console.error("Error in /discover:", err);
     next(err);

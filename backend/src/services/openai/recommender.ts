@@ -12,6 +12,13 @@ export type TasteSnapshot = {
   langPrefs?: Array<{ lang: string; share: number }>;
 };
 
+export type AIRecommendedSong = {
+  title: string;
+  artist: string;
+  MIL: string; // Most Important Lyric (short quote)
+  MIL_EXP: string; // Brief explanation (why this lyric matters / fits user)
+};
+
 // cross-genre starter pack
 export async function recommendStarterPackByOpenAI(limit = 10) {
   const n = Math.max(1, Math.min(limit, 20));
@@ -25,9 +32,17 @@ Mix eras (mostly modern, a few classics). Prefer tracks that typically have Spot
 Avoid novelty/overly obscure picks; choose representative, high-quality songs.
 Return STRICT JSON ONLY:
 
-{"songs":[{"title":"...","artist":"..."}, ...]}
+- "title": string
+- "artist": string
+- "MIL": string (the most important lyric line/short excerpt; 6–20 words; no ellipses if possible)
+- "MIL_EXP": string (1–2 sentences explaining why this lyric matters and why it matches the user's taste)
 
-No commentary, no extra fields, no duplicates.
+Constraints:
+- Return EXACTLY ${limit} items.
+- Use strict JSON: {"songs":[{...},{...}]}. No commentary, no Markdown.
+- Keep MIL <= 140 chars, MIL_EXP <= 300 chars.
+- Prefer official lyric lines if you recall them; if unsure, provide a concise, faithful paraphrase in quotes and note "paraphrase" in MIL_EXP.
+- Avoid duplicates and meme/joke entries.
 `.trim();
 
   const user = JSON.stringify({ limit: n });
@@ -62,18 +77,24 @@ export async function recommendSongsByOpenAI(input: {
   likes: LikeItem[];
   taste?: TasteSnapshot;
   limit?: number;
-}) {
+}): Promise<AIRecommendedSong[]> {
   const limit = Math.max(1, Math.min(input.limit ?? 10, 20));
 
   const system = `
-You are a music recommendation engine. Given a user's liked songs (title + artist) and an optional taste summary,
+You are a music recommendation engine. Given liked songs (title + artist) and an optional taste summary,
 recommend real, existing songs that match the user's lyrical/mood/style vibe.
-Return diverse but coherent picks (newer + a few classics ok). Avoid duplicates and avoid anything already in the likes.
-Output STRICT JSON with this exact schema:
+For EACH song, include:
+- "title": string
+- "artist": string
+- "MIL": string (the most important lyric line/short excerpt; 6–20 words; no ellipses if possible)
+- "MIL_EXP": string (1–2 sentences explaining why this lyric matters and why it matches the user's taste)
 
-{"songs":[{"title":"...","artist":"..."}, ...]}
-
-No commentary, no extra keys. Always real songs by real artists. Use global availability when possible.
+Constraints:
+- Return EXACTLY ${limit} items.
+- Use strict JSON: {"songs":[{...},{...}]}. No commentary, no Markdown.
+- Keep MIL <= 140 chars, MIL_EXP <= 300 chars.
+- Prefer official lyric lines if you recall them; if unsure, provide a concise, faithful paraphrase in quotes and note "paraphrase" in MIL_EXP.
+- Avoid duplicates and meme/joke entries.
 `.trim();
 
   const userPayload = {
@@ -93,21 +114,19 @@ No commentary, no extra keys. Always real songs by real artists. Use global avai
   });
 
   const raw = resp.choices[0]?.message?.content || "{}";
-  let parsed: any = {};
+   let parsed: any;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    parsed = {};
+    parsed = { songs: [] };
   }
-  const songs: Array<{ title: string; artist: string }> = Array.isArray(parsed?.songs)
-    ? parsed.songs
-    : [];
-
-  // normalize + trim
-  const norm = (s: string) => s?.trim();
-  const cleaned = songs
-    .map((s) => ({ title: norm(s.title || ""), artist: norm(s.artist || "") }))
-    .filter((s) => s.title && s.artist);
-
-  return cleaned.slice(0, limit);
+  const songs = Array.isArray(parsed.songs) ? parsed.songs : [];
+  // Light validation/coercion
+  return songs.slice(0, limit).map((s: any) => ({
+    title: String(s.title ?? "").trim(),
+    artist: String(s.artist ?? "").trim(),
+    MIL: String(s.MIL ?? "").trim(),
+    MIL_EXP: String(s.MIL_EXP ?? "").trim(),
+  }));
 }
+

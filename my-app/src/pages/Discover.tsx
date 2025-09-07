@@ -10,6 +10,9 @@ interface SongCard {
   preview_url?: string | null;
   image_url?: string | null;
   spotify_url?: string | null;
+
+  MIL?: string | null; // short quote
+  MIL_EXP?: string | null; // brief explanation
 }
 
 const fallbackImage =
@@ -145,6 +148,8 @@ const Discover: React.FC = () => {
         preview_url: song.preview_url ?? null,
         image_url: song.image_url || fallbackImage,
         spotify_url: song.spotify_url ?? null,
+        MIL: song.MIL ?? null,
+        MIL_EXP: song.MIL_EXP ?? null,
       }));
 
       setCards((prev) => {
@@ -248,11 +253,22 @@ const Discover: React.FC = () => {
                       pointerEvents: isTop ? "auto" : "none",
                       isolation: "isolate",
                     }}
-                    initial={{ scale: depthScale, y: depthOffset, opacity: depthOpacity }}
-                    animate={{ scale: depthScale, y: depthOffset, opacity: depthOpacity }}
+                    initial={{
+                      scale: depthScale,
+                      y: depthOffset,
+                      opacity: depthOpacity,
+                    }}
+                    animate={{
+                      scale: depthScale,
+                      y: depthOffset,
+                      opacity: depthOpacity,
+                    }}
                     exit={
                       isTop
-                        ? { x: lastDirection === "right" ? 300 : -300, opacity: 0 }
+                        ? {
+                            x: lastDirection === "right" ? 300 : -300,
+                            opacity: 0,
+                          }
                         : { opacity: 0 }
                     }
                     transition={{ type: "spring", stiffness: 260, damping: 24 }}
@@ -285,8 +301,25 @@ const Discover: React.FC = () => {
                           <h2 className="text-lg font-bold text-white/95 leading-tight">
                             {card.title}
                           </h2>
-                          <p className="text-sm text-purple-200/90">{card.artist}</p>
+                          <p className="text-sm text-purple-200/90">
+                            {card.artist}
+                          </p>
                         </div>
+
+                        {(card.MIL || card.MIL_EXP) && (
+                          <div className="w-full mt-1 text-center space-y-1">
+                            {card.MIL && (
+                              <p className="text-sm italic text-purple-100/95 leading-snug line-clamp-2">
+                                “{card.MIL}”
+                              </p>
+                            )}
+                            {card.MIL_EXP && (
+                              <p className="text-[11px] text-purple-200/80 leading-snug line-clamp-3">
+                                {card.MIL_EXP}
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         {card.preview_url && (
                           <div className="w-full">
