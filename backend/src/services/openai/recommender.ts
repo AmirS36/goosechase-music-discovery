@@ -2,6 +2,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
+export type RecommenderOpts = { moodHint?: string };
 export type LikeItem = { title: string; artist: string };
 export type TasteSnapshot = {
   topThemes?: string[];
@@ -19,16 +20,17 @@ export type AIRecommendedSong = {
   MIL_EXP: string; // Brief explanation (why this lyric matters / fits user)
 };
 
+
 // cross-genre starter pack
 export async function recommendStarterPackByOpenAI(limit = 10) {
   const n = Math.max(1, Math.min(limit, 20));
-
+  
   const system = `
-You are a music recommendation engine. The user has NO history yet.
-Create a welcoming starter pack of real, existing songs across DISTINCT genres and regions.
-Aim for breadth (e.g., pop, hip-hop/rap, R&B/soul, indie/alt, electronic/dance, rock/metal, jazz/funk, classical/neo-classical,
-Latin/reggaeton/afrobeats, K-pop/J-pop, folk/country, Middle-Eastern/Israeli).
-Mix eras (mostly modern, a few classics). Prefer tracks that typically have Spotify previews.
+  You are a music recommendation engine. The user has NO history yet.
+  Create a welcoming starter pack of real, existing songs across DISTINCT genres and regions.
+  Aim for breadth (e.g., pop, hip-hop/rap, R&B/soul, indie/alt, electronic/dance, rock/metal, jazz/funk, classical/neo-classical,
+  Latin/reggaeton/afrobeats, K-pop/J-pop, folk/country, Middle-Eastern/Israeli).
+  Mix eras (mostly modern, a few classics). Prefer tracks that typically have Spotify previews.
 Avoid novelty/overly obscure picks; choose representative, high-quality songs.
 Return STRICT JSON ONLY:
 
@@ -46,7 +48,7 @@ Constraints:
 `.trim();
 
   const user = JSON.stringify({ limit: n });
-
+  
   const resp = await client.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0.7,
@@ -60,7 +62,7 @@ Constraints:
   const raw = resp.choices[0]?.message?.content || "{}";
   let parsed: any = {};
   try { parsed = JSON.parse(raw); } catch { parsed = {}; }
-
+  
   const songs: Array<{ title: string; artist: string }> = Array.isArray(parsed?.songs)
     ? parsed.songs
     : [];
@@ -70,19 +72,21 @@ Constraints:
     .map(s => ({ title: norm(s.title), artist: norm(s.artist) }))
     .filter(s => s.title && s.artist)
     .slice(0, n);
-}
+  }
 
-
+  
 export async function recommendSongsByOpenAI(input: {
   likes: LikeItem[];
   taste?: TasteSnapshot;
   limit?: number;
+  moodHint?: string; 
 }): Promise<AIRecommendedSong[]> {
   const limit = Math.max(1, Math.min(input.limit ?? 10, 20));
 
   const system = `
 You are a music recommendation engine. Given liked songs (title + artist) and an optional taste summary,
 recommend real, existing songs that match the user's lyrical/mood/style vibe.
+${input.moodHint ? `Weather hint: Favor a "${input.moodHint}" vibe in your picks.` : ""}
 For EACH song, include:
 - "title": string
 - "artist": string

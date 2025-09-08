@@ -116,6 +116,50 @@ async function resolveWithITunes(title: string, artist: string) {
   };
 }
 
+/* ---------------- Map Open-Meteo weather codes to simple moods ---------------- */
+
+function weatherCodeToMood(code: number): string {
+  // rain/drizzle/showers
+  if ([51,53,55,61,63,65,80,81,82,66,67].includes(code)) return "melancholic, sad, chill, lo-fi, acoustic";
+  // thunderstorm
+  if ([95,96,99].includes(code)) return "dramatic, intense, anthemic, electronic/alt rock";
+  // snow/ice
+  if ([71,73,75,77,85,86].includes(code)) return "cozy, warm, intimate, acoustic, jazz";
+  // clear
+  if (code === 0) return "sunny, upbeat, feel-good pop, dance";
+  // clouds/fog
+  if ([1,2,3,45,48].includes(code)) return "mellow, indie, soft pop, ambient";
+  return "balanced, versatile";
+}
+
+async function inferWeatherMoodFromQuery(req: Request): Promise<string | undefined> {
+  const useWeather = String(req.query.weather || "").toLowerCase() === "true";
+  if (!useWeather) return undefined;
+
+  const lat = parseFloat(String(req.query.lat || ""));
+  const lon = parseFloat(String(req.query.lon || ""));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
+
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return undefined;
+    const j = await r.json().catch(() => null);
+    const code = j?.current?.weather_code;
+    const temp = j?.current?.temperature_2m;
+    if (typeof code !== "number") return undefined;
+
+    let mood = weatherCodeToMood(code);
+    if (typeof temp === "number") {
+      if (temp >= 28) mood = "summer, upbeat, dance, feel-good";
+      if (temp <= 10 && !mood.includes("cozy")) mood += ", cozy";
+    }
+    return mood;
+  } catch {
+    return undefined;
+  }
+}
+
 /* ---------------- Route: /api/discover ---------------- */
 
 router.get("/", async (req: Request, res: Response, next: NextFunction) => {
@@ -176,17 +220,20 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         }
       : undefined;
 
+    // infer weather mood from ?weather=true&lat=...&lon=...
+    const moodHint = await inferWeatherMoodFromQuery(req);
+
     // 3) ask OpenAI for suggestions
     // likes = RIGHT swipes mapped to [{title, artist}]
-    let aiSongs: Array<{ title: string; artist: string }>;
+    let aiSongs: Array<{ title: string; artist: string ; MIL?: string; MIL_EXP?: string }> = [];
     const limit = 8;
           
     // COLD START: no history → diverse cross-genre starter pack from OpenAI
     if (likes.length === 0) {
-      aiSongs = await recommendStarterPackByOpenAI(limit);
+      aiSongs = await recommendStarterPackByOpenAI(limit, { moodHint });
     } else {
       // Personalized followups guided by likes (and optional taste snapshot)
-      aiSongs = await recommendSongsByOpenAI({ likes, taste, limit });
+      aiSongs = await recommendSongsByOpenAI({ likes, taste, limit, moodHint });
     }
 
     // 4) Build liked/disliked lookup sets ---------- (NEW: include dislikes)
@@ -264,12 +311,13 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
    const cleaned = normalized.filter((s) => s.title && s.artist);
    const songs = cleaned.slice(0, limit);
 
-   return res.json({ songs });
+   res.json({ songs });
   } catch (err) {
     console.error("Error in /discover:", err);
     next(err);
   }
 });
+
 
 function safeParseArr(s?: string | null): string[] {
   if (!s) return [];

@@ -11,7 +11,7 @@ interface SongCard {
   image_url?: string | null;
   spotify_url?: string | null;
 
-  MIL?: string | null; // short quote
+  MIL?: string | null;     // short quote
   MIL_EXP?: string | null; // brief explanation
 }
 
@@ -27,8 +27,6 @@ const CustomAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
   useEffect(() => {
     setPlaying(true);
     audioRef.current?.play().catch(() => setPlaying(false));
-
-    // Pause when unmounting or when src changes away
     return () => {
       try { audioRef.current?.pause(); } catch {}
     };
@@ -123,21 +121,31 @@ const Discover: React.FC = () => {
   const [lastDirection, setLastDirection] = useState<"left" | "right" | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Weather mode toggle + coords
+  const [weatherMode, setWeatherMode] = useState(false);
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+
+  // Build URL with optional weather params
+  const buildUrl = () => {
+    const username = encodeURIComponent(localStorage.getItem("username") || "");
+    const base = `http://localhost:5000/api/discover?username=${username}`;
+    const w = weatherMode && coords ? `&weather=true&lat=${coords.lat}&lon=${coords.lon}` : "";
+    return `${base}${w}`;
+  };
+
+  // Single fetch function used everywhere
   const fetchRecommendations = useCallback(async () => {
     if (loading) return;
     setLoading(true);
     try {
-      const username = localStorage.getItem("username") || "";
-      const response = await fetch(
-        "http://localhost:5000/api/discover?username=" + encodeURIComponent(username),
-        {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      const response = await fetch(buildUrl(), {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (!response.ok) {
-        console.error("Discover fetch failed with status:", response.status);
+        const text = await response.text();
+        console.error("Discover fetch failed:", response.status, text.slice(0, 200));
         return;
       }
 
@@ -153,7 +161,7 @@ const Discover: React.FC = () => {
       }));
 
       setCards((prev) => {
-        const seen = new Set(prev.map((c) => (c.spotify_url || `${c.title}|${c.artist}`)));
+        const seen = new Set(prev.map((c) => c.spotify_url || `${c.title}|${c.artist}`));
         const unique = newCards.filter((c) => {
           const key = c.spotify_url || `${c.title}|${c.artist}`;
           if (seen.has(key)) return false;
@@ -167,14 +175,16 @@ const Discover: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [loading]);
+  }, [loading, weatherMode, coords?.lat, coords?.lon]); // deps so it rebuilds the URL
 
+  // Initial fetch
   useEffect(() => {
     if (cards.length === 0 && !loading) {
       fetchRecommendations();
     }
   }, [cards.length, loading, fetchRecommendations]);
 
+  // Prefetch when near end
   useEffect(() => {
     const remaining = cards.length - currentIndex;
     if (remaining <= 1 && !loading) {
@@ -182,6 +192,19 @@ const Discover: React.FC = () => {
     }
   }, [currentIndex, cards.length, loading, fetchRecommendations]);
 
+  // // Refetch when Weather toggles or coords change (avoid first render double-fetch)
+  // const firstWeatherRef = useRef(true);
+  // useEffect(() => {
+  //   if (firstWeatherRef.current) {
+  //     firstWeatherRef.current = false;
+  //     return;
+  //   }
+  //   setCards([]);
+  //   setCurrentIndex(0);
+  //   fetchRecommendations();
+  // }, [weatherMode, coords?.lat, coords?.lon, fetchRecommendations]);
+
+  // Swipe handlers
   const handleSwipe = (direction: "left" | "right") => {
     if (currentIndex >= cards.length) return;
     const card = cards[currentIndex];
@@ -218,20 +241,50 @@ const Discover: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-purple-900 text-white flex flex-col">
+      {/* Top Section */}
       <header className="flex justify-between items-center p-4">
         <div className="flex items-center gap-2">
           <User className="w-6 h-6" />
           <span className="text-sm font-medium">Profile</span>
         </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-1 text-sm text-red-400 hover:text-red-500"
-        >
-          <LogOut className="w-5 h-5" />
-          Logout
-        </button>
+
+        <div className="flex items-center gap-3">
+          {/* Weather toggle */}
+          <button
+            onClick={() => {
+              setWeatherMode((prev) => {
+                const next = !prev;
+                if (next && !coords && "geolocation" in navigator) {
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                    (err) => console.warn("Geolocation denied/failed:", err),
+                    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
+                  );
+                }
+                return next;
+              });
+            }}
+            className={`text-sm px-3 py-1 rounded-md border ${
+              weatherMode
+                ? "bg-blue-600 border-blue-500 text-white"
+                : "bg-transparent border-white/30 text-white/90 hover:bg-white/10"
+            }`}
+            title="Tilt recommendations by current weather"
+          >
+            {weatherMode ? "Weather: On" : "Weather"}
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1 text-sm text-red-400 hover:text-red-500"
+          >
+            <LogOut className="w-5 h-5" />
+            Logout
+          </button>
+        </div>
       </header>
 
+      {/* Card Section */}
       <main className="flex-1 flex flex-col items-center justify-center px-6">
         <h1 className="text-2xl font-bold mb-4">Discover New Music</h1>
         <div className="relative w-full max-w-sm aspect-[4/5]" {...swipeHandlers}>
@@ -253,26 +306,16 @@ const Discover: React.FC = () => {
                       pointerEvents: isTop ? "auto" : "none",
                       isolation: "isolate",
                     }}
-                    initial={{
-                      scale: depthScale,
-                      y: depthOffset,
-                      opacity: depthOpacity,
-                    }}
-                    animate={{
-                      scale: depthScale,
-                      y: depthOffset,
-                      opacity: depthOpacity,
-                    }}
+                    initial={{ scale: depthScale, y: depthOffset, opacity: depthOpacity }}
+                    animate={{ scale: depthScale, y: depthOffset, opacity: depthOpacity }}
                     exit={
                       isTop
-                        ? {
-                            x: lastDirection === "right" ? 300 : -300,
-                            opacity: 0,
-                          }
+                        ? { x: lastDirection === "right" ? 300 : -300, opacity: 0 }
                         : { opacity: 0 }
                     }
                     transition={{ type: "spring", stiffness: 260, damping: 24 }}
                   >
+                    {/* Image */}
                     <div className="w-full h-full flex items-start justify-center bg-black/5">
                       <img
                         src={card.image_url || fallbackImage}
@@ -282,6 +325,7 @@ const Discover: React.FC = () => {
                       />
                     </div>
 
+                    {/* Info */}
                     {isTop ? (
                       <motion.div
                         className="absolute bottom-0 left-0 right-0 px-4 py-3 flex flex-col items-center gap-2"
@@ -301,9 +345,7 @@ const Discover: React.FC = () => {
                           <h2 className="text-lg font-bold text-white/95 leading-tight">
                             {card.title}
                           </h2>
-                          <p className="text-sm text-purple-200/90">
-                            {card.artist}
-                          </p>
+                          <p className="text-sm text-purple-200/90">{card.artist}</p>
                         </div>
 
                         {(card.MIL || card.MIL_EXP) && (
@@ -366,6 +408,7 @@ const Discover: React.FC = () => {
         </div>
       </main>
 
+      {/* Bottom Navigation */}
       <nav className="bg-black/70 backdrop-blur-md h-16 flex items-center justify-around">
         <button onClick={() => navigate("/home")} className="flex flex-col items-center text-white">
           <HomeIcon className="w-6 h-6" />
