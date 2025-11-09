@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSwipeable } from "react-swipeable";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, LogOut, Home as HomeIcon, Search, Heart, Settings, ExternalLink } from "lucide-react";
+import { User, LogOut, Home as HomeIcon, Search, Heart, Settings, ExternalLink, ChevronLeft, ChevronRight, X as XIcon } from "lucide-react";
 
 interface SongCard {
   title: string;
@@ -288,6 +288,39 @@ const Discover: React.FC = () => {
       <main className="flex-1 flex flex-col items-center justify-center px-6">
         <h1 className="text-2xl font-bold mb-4">Discover New Music</h1>
         <div className="relative w-full max-w-sm aspect-[4/5]" {...swipeHandlers}>
+          {/* Add SwipeIndicator before the arrows */}
+          <AnimatePresence>
+            <SwipeIndicator direction={swipeDirection} />
+          </AnimatePresence>
+
+          {/* Left Arrow */}
+          <button
+            onClick={() => handleSwipe("left")}
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-12 z-40
+                       w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm
+                       flex items-center justify-center
+                       text-white/70 hover:text-red-400
+                       transition-all duration-200 hover:scale-110
+                       hover:bg-black/40"
+            aria-label="Swipe Left"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+
+          {/* Right Arrow */}
+          <button
+            onClick={() => handleSwipe("right")}
+            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-12 z-40
+                       w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm
+                       flex items-center justify-center
+                       text-white/70 hover:text-green-400
+                       transition-all duration-200 hover:scale-110
+                       hover:bg-black/40"
+            aria-label="Swipe Right"
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
+
           <AnimatePresence initial={false}>
             {cards.length > 0 && currentIndex < cards.length ? (
               cards.slice(currentIndex, currentIndex + 3).map((card, i) => {
@@ -428,6 +461,30 @@ const Discover: React.FC = () => {
         </button>
       </nav>
     </div>
+  );
+};
+
+const SwipeIndicator: React.FC<{ direction: "left" | "right" | null }> = ({ direction }) => {
+  if (!direction) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.3 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.3 }}
+      transition={{ duration: 0.2 }}
+      className={`absolute z-50 top-1/2 -translate-y-1/2 
+        ${direction === 'left' ? 'left-8' : 'right-8'}
+        ${direction === 'left' ? 'text-red-500' : 'text-green-500'}`}
+    >
+      {direction === 'left' ? (
+        <XIcon className="w-20 h-20 stroke-[1.5]" />
+      ) : (
+        <svg viewBox="0 0 24 24" className="w-20 h-20 fill-current">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+        </svg>
+      )}
+    </motion.div>
   );
 };
 
